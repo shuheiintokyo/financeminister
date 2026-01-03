@@ -111,7 +111,7 @@ struct PortfolioManagementView: View {
                         .font(.caption)
                         .foregroundColor(.gray)
                     
-                    Text("\(viewModel.portfolioSummary.totalGainLossPercentage, specifier: "%.2f")%")
+                    Text(String(format: "%.2f%%", viewModel.portfolioSummary.totalGainLossPercentage as NSNumber))
                         .font(.system(weight: .semibold))
                         .foregroundColor(viewModel.portfolioSummary.totalGainLossPercentage >= 0 ? .green : .red)
                 }
@@ -178,7 +178,7 @@ struct PortfolioManagementView: View {
                                 
                                 HStack(spacing: 4) {
                                     Image(systemName: holding.gainLoss >= 0 ? "arrow.up.right" : "arrow.down.left")
-                                    Text("\(holding.gainLossPercentage, specifier: "%.2f")%")
+                                    Text(String(format: "%.2f%%", holding.gainLossPercentage as NSNumber))
                                 }
                                 .font(.caption)
                                 .foregroundColor(holding.gainLoss >= 0 ? .green : .red)
@@ -186,7 +186,7 @@ struct PortfolioManagementView: View {
                         }
                         
                         HStack {
-                            Text("数量: \(holding.quantity, specifier: "%.4g")")
+                            Text("数量: \(String(format: "%.4g", holding.quantity as NSNumber))")
                                 .font(.caption)
                                 .foregroundColor(.gray)
                             
