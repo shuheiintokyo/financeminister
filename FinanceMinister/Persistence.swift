@@ -1,13 +1,13 @@
 import Foundation
 import CoreData
 
-class PersistenceService {
-    static let shared = PersistenceService()
+class PersistenceController {
+    static let shared = PersistenceController()
     
     let container: NSPersistentContainer
     
     private init() {
-        container = NSPersistentContainer(name: "PortfolioApp")
+        container = NSPersistentContainer(name: "FinanceMinister")
         
         container.loadPersistentStores { description, error in
             if let error = error as NSError? {
@@ -113,22 +113,6 @@ class PersistenceService {
     }
 }
 
-// MARK: - Core Data Entity
-class HoldingEntity: NSManagedObject {
-    @NSManaged var id: UUID?
-    @NSManaged var symbol: String?
-    @NSManaged var stockName: String?
-    @NSManaged var marketType: String?
-    @NSManaged var quantity: Double
-    @NSManaged var purchasePrice: Double
-    @NSManaged var purchaseDate: Date?
-    @NSManaged var account: String?
-    @NSManaged var currentPrice: Double
-    @NSManaged var currency: String?
-}
-
-extension HoldingEntity {
-    @nonobjc public class func fetchRequest() -> NSFetchRequest<HoldingEntity> {
-        return NSFetchRequest<HoldingEntity>(entityName: "HoldingEntity")
-    }
-}
+// NOTE: HoldingEntity is auto-generated from your .xcdatamodel file
+// Xcode will automatically generate the HoldingEntity class and fetchRequest()
+// Do NOT manually define the class here, as it will conflict with code generation

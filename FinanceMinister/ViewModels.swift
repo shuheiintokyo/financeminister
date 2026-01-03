@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import CoreData
 
 class PortfolioViewModel: ObservableObject {
     @Published var holdings: [PortfolioHolding] = []
@@ -11,6 +12,7 @@ class PortfolioViewModel: ObservableObject {
     @Published var historicalExchangeRates: [ExchangeRateHistory] = []
     
     private var cancellables = Set<AnyCancellable>()
+    private let persistenceController = PersistenceController.shared
     
     init() {
         loadHoldings()
@@ -21,18 +23,18 @@ class PortfolioViewModel: ObservableObject {
     
     func addHolding(_ holding: PortfolioHolding) {
         holdings.append(holding)
-        saveHoldings()
+        persistenceController.saveHolding(holding)
     }
     
     func removeHolding(_ holding: PortfolioHolding) {
         holdings.removeAll { $0.id == holding.id }
-        saveHoldings()
+        persistenceController.deleteHolding(holding)
     }
     
     func updateHolding(_ holding: PortfolioHolding) {
         if let index = holdings.firstIndex(where: { $0.id == holding.id }) {
             holdings[index] = holding
-            saveHoldings()
+            persistenceController.saveHolding(holding)
         }
     }
     
@@ -120,24 +122,15 @@ class PortfolioViewModel: ObservableObject {
         historicalExchangeRates = mockRates.sorted { $0.date < $1.date }
     }
     
-    // MARK: - Persistence (UserDefaults を使用)
-    
-    private func saveHoldings() {
-        if let encoded = try? JSONEncoder().encode(holdings) {
-            UserDefaults.standard.set(encoded, forKey: "holdings")
-        }
-    }
+    // MARK: - Data Persistence with Core Data
     
     func loadHoldings() {
-        if let data = UserDefaults.standard.data(forKey: "holdings"),
-           let decoded = try? JSONDecoder().decode([PortfolioHolding].self, from: data) {
-            holdings = decoded
-        }
+        holdings = persistenceController.loadHoldings()
     }
     
     func clearAllHoldings() {
         holdings.removeAll()
-        saveHoldings()
+        persistenceController.clearAllHoldings()
     }
 }
 

@@ -1,17 +1,5 @@
 import SwiftUI
 
-@main
-struct PortfolioTrackerApp: App {
-    @StateObject var portfolioViewModel = PortfolioViewModel()
-    
-    var body: some Scene {
-        WindowGroup {
-            ContentView()
-                .environmentObject(portfolioViewModel)
-        }
-    }
-}
-
 struct ContentView: View {
     @State private var selectedTab: Tab = .portfolio
     
