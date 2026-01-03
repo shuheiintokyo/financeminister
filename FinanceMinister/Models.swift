@@ -98,4 +98,16 @@ struct PortfolioSummary {
     let totalGainLoss: Double
     let totalGainLossPercentage: Double
     let holdings: [PortfolioHolding]
+    
+    // Total amount invested (cost basis)
+    var totalCostBasis: Double {
+        holdings.reduce(0) { acc, holding in
+            let cost = (holding.purchasePrice * holding.quantity)
+            if holding.stock.market == .american {
+                return acc + (cost * currentExchangeRate)
+            } else {
+                return acc + cost
+            }
+        }
+    }
 }

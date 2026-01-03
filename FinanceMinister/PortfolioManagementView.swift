@@ -83,58 +83,29 @@ struct PortfolioManagementView: View {
     
     // MARK: - Summary Card
     private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("総資産額")
-                .font(.caption)
-                .foregroundColor(.gray)
-            
-            Text("¥\(formatCurrency(viewModel.portfolioSummary.totalValueInJpy))")
-                .font(.system(size: 32, weight: .bold, design: .default))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-            
-            HStack {
-                VStack(alignment: .leading) {
-                    Text("評価損益")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    
-                    Text("¥\(formatCurrency(viewModel.portfolioSummary.totalGainLoss))")
-                        .font(.system(weight: .semibold))
-                        .foregroundColor(viewModel.portfolioSummary.totalGainLoss >= 0 ? .green : .red)
-                }
+        VStack(alignment: .leading, spacing: 16) {
+            // Current Valuation (Large)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("現在の評価額")
+                    .font(.caption)
+                    .foregroundColor(.gray)
                 
-                Spacer()
-                
-                VStack(alignment: .trailing) {
-                    Text("騰落率")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    
-                    Text(String(format: "%.2f%%", viewModel.portfolioSummary.totalGainLossPercentage as NSNumber))
-                        .font(.system(weight: .semibold))
-                        .foregroundColor(viewModel.portfolioSummary.totalGainLossPercentage >= 0 ? .green : .red)
-                }
+                Text("¥\(formatCurrency(viewModel.portfolioSummary.totalValueInJpy))")
+                    .font(.system(size: 36, weight: .bold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             
             Divider()
             
-            HStack(spacing: 20) {
-                VStack(alignment: .leading) {
-                    Text("日本株")
+            // Total Invested
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("投資額")
                         .font(.caption)
                         .foregroundColor(.gray)
-                    Text("¥\(formatCurrency(viewModel.portfolioSummary.totalInJapaneseStocks))")
-                        .font(.system(size: 18, weight: .semibold))
-                }
-                
-                Divider()
-                
-                VStack(alignment: .leading) {
-                    Text("米国株")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    Text("¥\(formatCurrency(viewModel.portfolioSummary.totalInAmericanStocks))")
+                    
+                    Text("¥\(formatCurrency(viewModel.portfolioSummary.totalCostBasis))")
                         .font(.system(size: 18, weight: .semibold))
                 }
                 
@@ -192,8 +163,8 @@ struct PortfolioManagementView: View {
                             
                             Spacer()
                             
-                            let gainLossInJpy = holding.stock.market == .american ? holding.gainLoss * viewModel.currentExchangeRate : holding.gainLoss
-                            Text("評価損益: ¥\(formatCurrency(gainLossInJpy))")
+                            let currentValueInJpy = holding.stock.market == .american ? holding.currentValue * viewModel.currentExchangeRate : holding.currentValue
+                            Text("現在値: ¥\(formatCurrency(currentValueInJpy))")
                                 .font(.caption)
                                 .foregroundColor(.gray)
                         }
