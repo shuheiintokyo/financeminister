@@ -205,107 +205,107 @@ struct PortfolioManagementView: View {
     // MARK: - Add Stock Sheet
     private var addStockSheet: some View {
         NavigationView {
-            VStack(spacing: 16) {
-                // Market Selection
-                Picker("市場を選択", selection: $selectedMarket) {
-                    Text("日本株").tag(MarketType.japanese)
-                    Text("米国株").tag(MarketType.american)
-                }
-                .pickerStyle(.segmented)
-                .padding()
-                
-                // Stock Search
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("株を検索")
-                        .font(.headline)
-                        .padding(.horizontal)
-                    
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                            .foregroundColor(.gray)
-                        
-                        TextField("シンボルまたは企業名", text: $searchQuery)
-                            .onChange(of: searchQuery) { newValue in
-                                searchViewModel.searchStocks(query: newValue, market: selectedMarket)
-                            }
-                        
-                        if !searchQuery.isEmpty {
-                            Button(action: { searchQuery = "" }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.gray)
-                            }
-                        }
+            ScrollView {
+                VStack(spacing: 16) {
+                    // Market Selection
+                    Picker("市場を選択", selection: $selectedMarket) {
+                        Text("日本株").tag(MarketType.japanese)
+                        Text("米国株").tag(MarketType.american)
                     }
-                    .padding(8)
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-                    .padding(.horizontal)
+                    .pickerStyle(.segmented)
+                    .padding()
                     
-                    // Search Results Dropdown
-                    if !searchViewModel.searchResults.isEmpty && !searchQuery.isEmpty {
-                        VStack(alignment: .leading, spacing: 0) {
-                            ForEach(searchViewModel.searchResults) { stock in
-                                Button(action: {
-                                    selectedStock = stock
-                                    searchQuery = ""
-                                }) {
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(stock.name)
-                                            .font(.body)
-                                            .foregroundColor(.black)
-                                        
-                                        Text("\(stock.symbol) - \(formatCurrency(stock.currentPrice)) \(stock.currency)")
-                                            .font(.caption)
-                                            .foregroundColor(.gray)
-                                    }
-                                    .padding(.vertical, 8)
-                                    .padding(.horizontal)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
+                    // Stock Search
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("株を検索")
+                            .font(.headline)
+                            .padding(.horizontal)
+                        
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.gray)
+                            
+                            TextField("シンボルまたは企業名", text: $searchQuery)
+                                .onChange(of: searchQuery) { newValue in
+                                    searchViewModel.searchStocks(query: newValue, market: selectedMarket)
                                 }
-                                
-                                if stock.id != searchViewModel.searchResults.last?.id {
-                                    Divider()
-                                        .padding(.horizontal)
+                            
+                            if !searchQuery.isEmpty {
+                                Button(action: { searchQuery = "" }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.gray)
                                 }
                             }
                         }
-                        .background(Color(.systemBackground))
+                        .padding(8)
+                        .background(Color(.systemGray6))
                         .cornerRadius(8)
                         .padding(.horizontal)
-                    }
-                }
-                
-                // Selected Stock Display
-                if let stock = selectedStock {
-                    VStack(alignment: .leading, spacing: 12) {
-                        HStack {
-                            VStack(alignment: .leading) {
-                                Text(stock.name)
-                                    .font(.headline)
-                                Text(stock.symbol)
-                                    .font(.caption)
-                                    .foregroundColor(.gray)
-                            }
-                            
-                            Spacer()
-                            
-                            Button(action: { selectedStock = nil }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.gray)
-                            }
-                        }
                         
-                        Text("現在価格: \(formatCurrency(stock.currentPrice)) \(stock.currency)")
-                            .font(.caption)
-                            .foregroundColor(.gray)
+                        // Search Results Dropdown
+                        if !searchViewModel.searchResults.isEmpty && !searchQuery.isEmpty {
+                            VStack(alignment: .leading, spacing: 0) {
+                                ForEach(searchViewModel.searchResults) { stock in
+                                    Button(action: {
+                                        selectedStock = stock
+                                        searchQuery = ""
+                                    }) {
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            Text(stock.name)
+                                                .font(.body)
+                                                .foregroundColor(.black)
+                                            
+                                            Text("\(stock.symbol) - \(formatCurrency(stock.currentPrice)) \(stock.currency)")
+                                                .font(.caption)
+                                                .foregroundColor(.gray)
+                                        }
+                                        .padding(.vertical, 8)
+                                        .padding(.horizontal)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    
+                                    if stock.id != searchViewModel.searchResults.last?.id {
+                                        Divider()
+                                            .padding(.horizontal)
+                                    }
+                                }
+                            }
+                            .background(Color(.systemBackground))
+                            .cornerRadius(8)
+                            .padding(.horizontal)
+                        }
                     }
-                    .padding()
-                    .background(Color(.systemGray6))
-                    .cornerRadius(8)
-                    .padding()
                     
-                    // Input Fields
-                    ScrollView {
+                    // Selected Stock Display
+                    if let stock = selectedStock {
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                VStack(alignment: .leading) {
+                                    Text(stock.name)
+                                        .font(.headline)
+                                    Text(stock.symbol)
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                }
+                                
+                                Spacer()
+                                
+                                Button(action: { selectedStock = nil }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.gray)
+                                }
+                            }
+                            
+                            Text("現在価格: \(formatCurrency(stock.currentPrice)) \(stock.currency)")
+                                .font(.caption)
+                                .foregroundColor(.gray)
+                        }
+                        .padding()
+                        .background(Color(.systemGray6))
+                        .cornerRadius(8)
+                        .padding()
+                        
+                        // Input Fields
                         VStack(alignment: .leading, spacing: 12) {
                             // Quantity
                             VStack(alignment: .leading) {
@@ -338,7 +338,7 @@ struct PortfolioManagementView: View {
                                     selection: $purchaseDate,
                                     displayedComponents: .date
                                 )
-                                .datePickerStyle(.graphical)
+                                .datePickerStyle(.compact)
                             }
                             
                             // Account
@@ -350,36 +350,36 @@ struct PortfolioManagementView: View {
                                     .background(Color(.systemGray6))
                                     .cornerRadius(6)
                             }
+                            
+                            Spacer()
+                                .frame(height: 20)
+                            
+                            HStack(spacing: 12) {
+                                Button(action: {
+                                    resetForm()
+                                    showingAddSheet = false
+                                }) {
+                                    Text("キャンセル")
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color(.systemGray6))
+                                        .foregroundColor(.black)
+                                        .cornerRadius(8)
+                                }
+                                
+                                Button(action: addHolding) {
+                                    Text("追加")
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(8)
+                                }
+                                .disabled(!canAddHolding())
+                            }
                         }
                         .padding()
                     }
-                    
-                    HStack(spacing: 12) {
-                        Button(action: {
-                            resetForm()
-                            showingAddSheet = false
-                        }) {
-                            Text("キャンセル")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color(.systemGray6))
-                                .foregroundColor(.black)
-                                .cornerRadius(8)
-                        }
-                        
-                        Button(action: addHolding) {
-                            Text("追加")
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(Color.blue)
-                                .foregroundColor(.white)
-                                .cornerRadius(8)
-                        }
-                        .disabled(!canAddHolding())
-                    }
-                    .padding()
-                } else {
-                    Spacer()
                 }
             }
             .navigationTitle("株を追加")
@@ -413,6 +413,12 @@ struct PortfolioManagementView: View {
     }
     
     private func addHolding() {
+        print("DEBUG: addHolding called")
+        print("DEBUG: selectedStock = \(selectedStock?.name ?? "nil")")
+        print("DEBUG: quantity = '\(quantity)'")
+        print("DEBUG: purchasePrice = '\(purchasePrice)'")
+        print("DEBUG: canAddHolding = \(canAddHolding())")
+        
         guard let stock = selectedStock,
               let qty = Double(quantity),
               let price = Double(purchasePrice),
@@ -420,6 +426,7 @@ struct PortfolioManagementView: View {
               price > 0 else {
             alertMessage = "正しい値を入力してください"
             showAlert = true
+            print("DEBUG: Validation failed")
             return
         }
         
