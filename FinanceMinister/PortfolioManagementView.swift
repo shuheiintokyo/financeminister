@@ -131,8 +131,9 @@ struct PortfolioManagementView: View {
                     return v1 > v2
                 }) { holding in
                     VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
+                        // Top row: Stock name and current value
+                        HStack(alignment: .top) {
+                            VStack(alignment: .leading, spacing: 2) {
                                 Text(holding.stock.name)
                                     .font(.headline)
                                 Text(holding.stock.symbol)
@@ -142,50 +143,35 @@ struct PortfolioManagementView: View {
                             
                             Spacer()
                             
-                            VStack(alignment: .trailing, spacing: 4) {
-                                let valueInJpy = holding.stock.market == .american ? holding.currentValue * viewModel.currentExchangeRate : holding.currentValue
+                            let valueInJpy = holding.stock.market == .american ? holding.currentValue * viewModel.currentExchangeRate : holding.currentValue
+                            VStack(alignment: .trailing, spacing: 2) {
                                 Text("¥\(formatCurrency(valueInJpy))")
                                     .font(.headline)
-                                
-                                HStack(spacing: 4) {
-                                    Image(systemName: holding.gainLoss >= 0 ? "arrow.up.right" : "arrow.down.left")
-                                    Text(String(format: "%.2f%%", holding.gainLossPercentage as NSNumber))
-                                }
-                                .font(.caption)
-                                .foregroundColor(holding.gainLoss >= 0 ? .green : .red)
                             }
                         }
                         
-                        HStack {
-                            Text("数量: \(String(format: "%.4g", holding.quantity as NSNumber))")
+                        // Bottom row: Quantity and delete button
+                        HStack(spacing: 12) {
+                            // Quantity display - FIX: Format as integer, not scientific notation
+                            let qty = max(0, holding.quantity)  // Ensure non-negative
+                            let qtyDisplay = qty < 1 ? String(format: "%.2f", qty) : String(Int(qty))
+                            
+                            Text("数量: \(qtyDisplay)")
                                 .font(.caption)
                                 .foregroundColor(.gray)
                             
                             Spacer()
                             
-                            let currentValueInJpy = holding.stock.market == .american ? holding.currentValue * viewModel.currentExchangeRate : holding.currentValue
-                            Text("現在値: ¥\(formatCurrency(currentValueInJpy))")
-                                .font(.caption)
-                                .foregroundColor(.gray)
-                        }
-                        
-                        HStack {
                             Button(action: {
                                 viewModel.removeHolding(holding)
                             }) {
-                                HStack {
+                                HStack(spacing: 4) {
                                     Image(systemName: "trash")
                                     Text("削除")
                                 }
                                 .font(.caption)
                                 .foregroundColor(.red)
                             }
-                            
-                            Spacer()
-                            
-                            Text(holding.account)
-                                .font(.caption)
-                                .foregroundColor(.gray)
                         }
                     }
                     .padding()

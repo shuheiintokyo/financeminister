@@ -122,32 +122,32 @@ struct PerformanceView: View {
                             .foregroundColor(.gray)
                     }
                     
-                    // Chart placeholder
+                    // Chart placeholder - LINE CHART
                     ZStack {
                         Color(.systemGray6)
                         
-                        VStack(spacing: 8) {
-                            HStack(spacing: 2) {
-                                ForEach(viewModel.historicalExchangeRates.prefix(30), id: \.id) { history in
+                        VStack {
+                            // Simple line visualization using HStack
+                            HStack(alignment: .bottom, spacing: 2) {
+                                ForEach(Array(viewModel.historicalExchangeRates.prefix(30).enumerated()), id: \.offset) { index, history in
                                     let minRate = viewModel.historicalExchangeRates.map { $0.rate }.min() ?? 0
                                     let maxRate = viewModel.historicalExchangeRates.map { $0.rate }.max() ?? 0
-                                    let range = maxRate - minRate
+                                    let range = maxRate - minRate > 0 ? maxRate - minRate : 1
                                     
                                     let height = range > 0 ? CGFloat((history.rate - minRate) / range) * 100 : 50
                                     
-                                    VStack {
-                                        Spacer()
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .fill(Color.blue.opacity(0.6))
-                                            .frame(height: height)
-                                    }
+                                    RoundedRectangle(cornerRadius: 1)
+                                        .fill(Color.blue.opacity(0.7))
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: height)
                                 }
                             }
-                            .frame(height: 120)
+                            .padding(8)
                             
                             Text(selectedTimeFrame.displayName)
                                 .font(.caption2)
                                 .foregroundColor(.gray)
+                                .padding(.top, 4)
                         }
                         .padding()
                     }
@@ -194,28 +194,28 @@ struct PerformanceView: View {
                     ZStack {
                         Color(.systemGray6)
                         
-                        VStack(spacing: 8) {
-                            HStack(spacing: 2) {
-                                ForEach(viewModel.historicalPrices.prefix(30), id: \.id) { history in
+                        VStack {
+                            // Simple line visualization using HStack
+                            HStack(alignment: .bottom, spacing: 2) {
+                                ForEach(Array(viewModel.historicalPrices.prefix(30).enumerated()), id: \.offset) { index, history in
                                     let minPrice = viewModel.historicalPrices.map { $0.price }.min() ?? 0
                                     let maxPrice = viewModel.historicalPrices.map { $0.price }.max() ?? 0
-                                    let range = maxPrice - minPrice
+                                    let range = maxPrice - minPrice > 0 ? maxPrice - minPrice : 1
                                     
                                     let height = range > 0 ? CGFloat((history.price - minPrice) / range) * 100 : 50
                                     
-                                    VStack {
-                                        Spacer()
-                                        RoundedRectangle(cornerRadius: 2)
-                                            .fill(Color.green.opacity(0.6))
-                                            .frame(height: height)
-                                    }
+                                    RoundedRectangle(cornerRadius: 1)
+                                        .fill(Color.green.opacity(0.7))
+                                        .frame(maxWidth: .infinity)
+                                        .frame(height: height)
                                 }
                             }
-                            .frame(height: 120)
+                            .padding(8)
                             
                             Text(selectedTimeFrame.displayName)
                                 .font(.caption2)
                                 .foregroundColor(.gray)
+                                .padding(.top, 4)
                         }
                         .padding()
                     }
@@ -240,7 +240,12 @@ struct PerformanceView: View {
                 
                 VStack(spacing: 8) {
                     StatisticRow(label: "現在価格", value: "\(formatCurrency(holding.stock.currentPrice)) \(holding.stock.currency)")
-                    StatisticRow(label: "数量", value: String(format: "%.4g", holding.quantity as NSNumber))
+                    
+                    // FIX: Quantity as proper number, not scientific notation
+                    let qty = max(0, holding.quantity)
+                    let qtyDisplay = qty < 1 ? String(format: "%.2f", qty) : String(Int(qty))
+                    StatisticRow(label: "数量", value: qtyDisplay)
+                    
                     StatisticRow(label: "評価額", value: "¥\(formatCurrency(holding.stock.market == .american ? holding.currentValue * viewModel.currentExchangeRate : holding.currentValue))")
                 }
             }
