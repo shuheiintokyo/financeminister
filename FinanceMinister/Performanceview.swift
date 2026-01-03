@@ -242,8 +242,6 @@ struct PerformanceView: View {
                     StatisticRow(label: "現在価格", value: "\(formatCurrency(holding.stock.currentPrice)) \(holding.stock.currency)")
                     StatisticRow(label: "数量", value: String(format: "%.4g", holding.quantity as NSNumber))
                     StatisticRow(label: "評価額", value: "¥\(formatCurrency(holding.stock.market == .american ? holding.currentValue * viewModel.currentExchangeRate : holding.currentValue))")
-                    StatisticRow(label: "評価損益", value: "¥\(formatCurrency(holding.stock.market == .american ? holding.gainLoss * viewModel.currentExchangeRate : holding.gainLoss))", valueColor: holding.gainLoss >= 0 ? .green : .red)
-                    StatisticRow(label: "騰落率", value: String(format: "%.2f%%", holding.gainLossPercentage as NSNumber), valueColor: holding.gainLossPercentage >= 0 ? .green : .red)
                 }
             }
         }

@@ -6,10 +6,11 @@ class NetworkService {
     private init() {}
     
     func fetchExchangeRate() -> AnyPublisher<ExchangeRate, Error> {
+        // For now, use fixed rate. In production, you could fetch from Yahoo Finance
         let mockRate = ExchangeRate(
             rate: 149.50,
             timestamp: Date(),
-            source: "Mock"
+            source: "Fixed"
         )
         return Just(mockRate)
             .setFailureType(to: Error.self)
@@ -17,16 +18,18 @@ class NetworkService {
     }
     
     func fetchStockPrice(symbol: String, market: MarketType) -> AnyPublisher<Stock, Error> {
-        let stock = Stock(
-            id: symbol,
-            symbol: symbol,
-            name: symbol,
-            market: market,
-            currentPrice: market == .american ? 150.0 : 5000.0,
-            currency: market == .american ? "USD" : "JPY"
-        )
-        return Just(stock)
-            .setFailureType(to: Error.self)
+        // Use real Yahoo Finance API
+        StockAPIService.shared.fetchStockPrice(symbol: symbol, market: market)
+            .map { price in
+                Stock(
+                    id: symbol,
+                    symbol: symbol,
+                    name: symbol,
+                    market: market,
+                    currentPrice: price,
+                    currency: market == .american ? "USD" : "JPY"
+                )
+            }
             .eraseToAnyPublisher()
     }
 }

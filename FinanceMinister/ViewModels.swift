@@ -138,6 +138,7 @@ class PortfolioViewModel: ObservableObject {
 class StockSearchViewModel: ObservableObject {
     @Published var searchResults: [Stock] = []
     @Published var isSearching = false
+    private var cancellables = Set<AnyCancellable>()
     
     func searchStocks(query: String, market: MarketType) {
         guard !query.isEmpty else {
@@ -146,8 +147,29 @@ class StockSearchViewModel: ObservableObject {
         }
         
         isSearching = true
+        print("DEBUG: Starting search for '\(query)' in \(market.rawValue) market")
         
-        // モック実装：サンプルデータを返す
+        // Try real API first
+        StockAPIService.shared.searchStocks(query: query, market: market)
+            .sink { [weak self] completion in
+                self?.isSearching = false
+                switch completion {
+                case .failure(let error):
+                    print("DEBUG: Search API error: \(error.localizedDescription)")
+                    // Fallback to mock data on error
+                    self?.loadMockData(query: query, market: market)
+                case .finished:
+                    print("DEBUG: Search completed successfully")
+                }
+            } receiveValue: { [weak self] stocks in
+                self?.searchResults = stocks
+                print("DEBUG: Search results: \(stocks.count) stocks found")
+            }
+            .store(in: &cancellables)
+    }
+    
+    // Fallback mock data if API fails
+    private func loadMockData(query: String, market: MarketType) {
         let mockJapaneseStocks = [
             Stock(id: "9984", symbol: "9984.T", name: "ソフトバンクグループ", market: .japanese, currentPrice: 6850.0, currency: "JPY"),
             Stock(id: "8306", symbol: "8306.T", name: "三菱UFJフィナンシャル", market: .japanese, currentPrice: 2800.0, currency: "JPY"),
@@ -160,13 +182,17 @@ class StockSearchViewModel: ObservableObject {
             Stock(id: "GOOGL", symbol: "GOOGL", name: "Alphabet Inc.", market: .american, currentPrice: 140.20, currency: "USD"),
         ]
         
-        let allStocks = mockJapaneseStocks + mockAmericanStocks
-        let filtered = allStocks.filter {
+        // Filter by market FIRST
+        let stocksForMarket = market == .japanese ? mockJapaneseStocks : mockAmericanStocks
+        
+        // Then filter by search query
+        let filtered = stocksForMarket.filter {
             $0.symbol.localizedCaseInsensitiveContains(query) ||
             $0.name.localizedCaseInsensitiveContains(query)
         }
         
         searchResults = filtered
         isSearching = false
+        print("DEBUG: Using fallback mock data - \(filtered.count) results")
     }
 }

@@ -25,6 +25,12 @@ class PersistenceController {
         let context = container.viewContext
         let entity = HoldingEntity(context: context)
         
+        print("DEBUG: Saving holding")
+        print("  - id: \(holding.id)")
+        print("  - symbol: \(holding.stock.symbol)")
+        print("  - quantity: \(holding.quantity)")
+        print("  - purchasePrice: \(holding.purchasePrice)")
+        
         entity.id = holding.id
         entity.quantity = holding.quantity
         entity.purchasePrice = holding.purchasePrice
@@ -36,6 +42,8 @@ class PersistenceController {
         entity.currentPrice = holding.stock.currentPrice
         entity.currency = holding.stock.currency
         
+        print("  - Entity saved: quantity=\(entity.quantity), purchasePrice=\(entity.purchasePrice)")
+        
         save(context)
     }
     
@@ -46,6 +54,12 @@ class PersistenceController {
         do {
             let entities = try context.fetch(fetchRequest)
             return entities.compactMap { entity in
+                print("DEBUG: Loading HoldingEntity")
+                print("  - id: \(entity.id ?? UUID())")
+                print("  - symbol: \(entity.symbol ?? "nil")")
+                print("  - quantity: \(entity.quantity)")
+                print("  - purchasePrice: \(entity.purchasePrice)")
+                
                 let market = MarketType(rawValue: entity.marketType ?? "Japanese") ?? .japanese
                 let stock = Stock(
                     id: entity.symbol ?? "",
@@ -56,7 +70,7 @@ class PersistenceController {
                     currency: entity.currency ?? "JPY"
                 )
                 
-                return PortfolioHolding(
+                let holding = PortfolioHolding(
                     id: entity.id ?? UUID(),
                     stock: stock,
                     quantity: entity.quantity,
@@ -64,6 +78,9 @@ class PersistenceController {
                     purchaseDate: entity.purchaseDate ?? Date(),
                     account: entity.account ?? "Default"
                 )
+                
+                print("  - Created holding with quantity: \(holding.quantity)")
+                return holding
             }
         } catch {
             print("Failed to fetch holdings: \(error.localizedDescription)")
