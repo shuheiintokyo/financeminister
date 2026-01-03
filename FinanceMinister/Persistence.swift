@@ -1,57 +1,134 @@
-//
-//  Persistence.swift
-//  FinanceMinister
-//
-//  Created by Shuhei Kinugasa on 2026/01/03.
-//
-
+import Foundation
 import CoreData
 
-struct PersistenceController {
-    static let shared = PersistenceController()
-
-    @MainActor
-    static let preview: PersistenceController = {
-        let result = PersistenceController(inMemory: true)
-        let viewContext = result.container.viewContext
-        for _ in 0..<10 {
-            let newItem = Item(context: viewContext)
-            newItem.timestamp = Date()
-        }
-        do {
-            try viewContext.save()
-        } catch {
-            // Replace this implementation with code to handle the error appropriately.
-            // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-            let nsError = error as NSError
-            fatalError("Unresolved error \(nsError), \(nsError.userInfo)")
-        }
-        return result
-    }()
-
+class PersistenceService {
+    static let shared = PersistenceService()
+    
     let container: NSPersistentContainer
-
-    init(inMemory: Bool = false) {
-        container = NSPersistentContainer(name: "FinanceMinister")
-        if inMemory {
-            container.persistentStoreDescriptions.first!.url = URL(fileURLWithPath: "/dev/null")
-        }
-        container.loadPersistentStores(completionHandler: { (storeDescription, error) in
+    
+    private init() {
+        container = NSPersistentContainer(name: "PortfolioApp")
+        
+        container.loadPersistentStores { description, error in
             if let error = error as NSError? {
-                // Replace this implementation with code to handle the error appropriately.
-                // fatalError() causes the application to generate a crash log and terminate. You should not use this function in a shipping application, although it may be useful during development.
-
-                /*
-                 Typical reasons for an error here include:
-                 * The parent directory does not exist, cannot be created, or disallows writing.
-                 * The persistent store is not accessible, due to permissions or data protection when the device is locked.
-                 * The device is out of space.
-                 * The store could not be migrated to the current model version.
-                 Check the error message to determine what the actual problem was.
-                 */
-                fatalError("Unresolved error \(error), \(error.userInfo)")
+                // In production, handle this more gracefully
+                print("Core Data load error: \(error.localizedDescription)")
             }
-        })
+        }
+        
         container.viewContext.automaticallyMergesChangesFromParent = true
+    }
+    
+    // MARK: - Holding Operations
+    
+    func saveHolding(_ holding: PortfolioHolding) {
+        let context = container.viewContext
+        let entity = HoldingEntity(context: context)
+        
+        entity.id = holding.id
+        entity.quantity = holding.quantity
+        entity.purchasePrice = holding.purchasePrice
+        entity.purchaseDate = holding.purchaseDate
+        entity.account = holding.account
+        entity.symbol = holding.stock.symbol
+        entity.stockName = holding.stock.name
+        entity.marketType = holding.stock.market.rawValue
+        entity.currentPrice = holding.stock.currentPrice
+        entity.currency = holding.stock.currency
+        
+        save(context)
+    }
+    
+    func loadHoldings() -> [PortfolioHolding] {
+        let context = container.viewContext
+        let fetchRequest = HoldingEntity.fetchRequest()
+        
+        do {
+            let entities = try context.fetch(fetchRequest)
+            return entities.compactMap { entity in
+                let market = MarketType(rawValue: entity.marketType ?? "Japanese") ?? .japanese
+                let stock = Stock(
+                    id: entity.symbol ?? "",
+                    symbol: entity.symbol ?? "",
+                    name: entity.stockName ?? "",
+                    market: market,
+                    currentPrice: entity.currentPrice,
+                    currency: entity.currency ?? "JPY"
+                )
+                
+                return PortfolioHolding(
+                    id: entity.id ?? UUID(),
+                    stock: stock,
+                    quantity: entity.quantity,
+                    purchasePrice: entity.purchasePrice,
+                    purchaseDate: entity.purchaseDate ?? Date(),
+                    account: entity.account ?? "Default"
+                )
+            }
+        } catch {
+            print("Failed to fetch holdings: \(error.localizedDescription)")
+            return []
+        }
+    }
+    
+    func deleteHolding(_ holding: PortfolioHolding) {
+        let context = container.viewContext
+        let fetchRequest = HoldingEntity.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", holding.id as CVarArg)
+        
+        do {
+            if let entity = try context.fetch(fetchRequest).first {
+                context.delete(entity)
+                save(context)
+            }
+        } catch {
+            print("Failed to delete holding: \(error.localizedDescription)")
+        }
+    }
+    
+    func clearAllHoldings() {
+        let context = container.viewContext
+        let fetchRequest = HoldingEntity.fetchRequest()
+        
+        do {
+            let holdings = try context.fetch(fetchRequest)
+            holdings.forEach { context.delete($0) }
+            save(context)
+        } catch {
+            print("Failed to clear holdings: \(error.localizedDescription)")
+        }
+    }
+    
+    // MARK: - Private Helper
+    
+    private func save(_ context: NSManagedObjectContext) {
+        if context.hasChanges {
+            do {
+                try context.save()
+            } catch {
+                let nsError = error as NSError
+                print("Save error: \(nsError.localizedDescription)")
+            }
+        }
+    }
+}
+
+// MARK: - Core Data Entity
+class HoldingEntity: NSManagedObject {
+    @NSManaged var id: UUID?
+    @NSManaged var symbol: String?
+    @NSManaged var stockName: String?
+    @NSManaged var marketType: String?
+    @NSManaged var quantity: Double
+    @NSManaged var purchasePrice: Double
+    @NSManaged var purchaseDate: Date?
+    @NSManaged var account: String?
+    @NSManaged var currentPrice: Double
+    @NSManaged var currency: String?
+}
+
+extension HoldingEntity {
+    @nonobjc public class func fetchRequest() -> NSFetchRequest<HoldingEntity> {
+        return NSFetchRequest<HoldingEntity>(entityName: "HoldingEntity")
     }
 }
