@@ -10,7 +10,6 @@ struct PortfolioManagementView: View {
     @State private var quantity: String = ""
     @State private var purchasePrice: String = ""
     @State private var purchaseDate = Date()
-    @State private var account = "Account 1"
     @State private var showAlert = false
     @State private var alertMessage = ""
     
@@ -86,7 +85,7 @@ struct PortfolioManagementView: View {
         VStack(alignment: .leading, spacing: 16) {
             // Current Valuation (Large)
             VStack(alignment: .leading, spacing: 4) {
-                Text("現在の評価額")
+                Text("現在のポートフォリオ評価額")
                     .font(.caption)
                     .foregroundColor(.gray)
                 
@@ -94,22 +93,6 @@ struct PortfolioManagementView: View {
                     .font(.system(size: 36, weight: .bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-            }
-            
-            Divider()
-            
-            // Total Invested
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("投資額")
-                        .font(.caption)
-                        .foregroundColor(.gray)
-                    
-                    Text("¥\(formatCurrency(viewModel.portfolioSummary.totalCostBasis))")
-                        .font(.system(size: 18, weight: .semibold))
-                }
-                
-                Spacer()
             }
         }
         .padding()
@@ -150,13 +133,14 @@ struct PortfolioManagementView: View {
                             }
                         }
                         
-                        // Bottom row: Quantity and delete button
+                        // Bottom row: Current price and delete button
                         HStack(spacing: 12) {
-                            // Quantity display - FIX: Format as integer, not scientific notation
-                            let qty = max(0, holding.quantity)  // Ensure non-negative
-                            let qtyDisplay = qty < 1 ? String(format: "%.2f", qty) : String(Int(qty))
+                            // Current price display
+                            let priceDisplay = holding.stock.market == .american ?
+                                "\(formatCurrency(holding.stock.currentPrice)) USD" :
+                                "¥\(formatCurrency(holding.stock.currentPrice))"
                             
-                            Text("数量: \(qtyDisplay)")
+                            Text("現在価格: \(priceDisplay)")
                                 .font(.caption)
                                 .foregroundColor(.gray)
                             
@@ -327,16 +311,6 @@ struct PortfolioManagementView: View {
                                 .datePickerStyle(.compact)
                             }
                             
-                            // Account
-                            VStack(alignment: .leading) {
-                                Text("口座")
-                                    .font(.headline)
-                                TextField("例: SBI証券", text: $account)
-                                    .padding(8)
-                                    .background(Color(.systemGray6))
-                                    .cornerRadius(6)
-                            }
-                            
                             Spacer()
                                 .frame(height: 20)
                             
@@ -421,7 +395,7 @@ struct PortfolioManagementView: View {
             quantity: qty,
             purchasePrice: price,
             purchaseDate: purchaseDate,
-            account: account.isEmpty ? "Default" : account
+            account: "Default"
         )
         
         viewModel.addHolding(holding)
@@ -437,7 +411,6 @@ struct PortfolioManagementView: View {
         quantity = ""
         purchasePrice = ""
         purchaseDate = Date()
-        account = "Account 1"
         searchQuery = ""
     }
 }

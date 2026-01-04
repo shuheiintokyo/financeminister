@@ -79,20 +79,14 @@ class StockAPIService {
                     return price
                 }
                 
-                // Fallback: return mock price if API fails
-                print("DEBUG: API response invalid, using mock price for \(symbol)")
-                let mockPrice = market == .american ? 150.0 : 5000.0
-                self.priceCache[symbol] = (price: mockPrice, timestamp: Date())
-                return mockPrice
+                // API response invalid - return error, not mock data
+                print("DEBUG: API response invalid for \(symbol)")
+                throw URLError(.badServerResponse)
             }
             .catch { error -> AnyPublisher<Double, Error> in
                 print("DEBUG: Yahoo Finance API error: \(error.localizedDescription)")
-                // Fallback to mock data
-                let mockPrice = market == .american ? 150.0 : 5000.0
-                self.priceCache[symbol] = (price: mockPrice, timestamp: Date())
-                return Just(mockPrice)
-                    .setFailureType(to: Error.self)
-                    .eraseToAnyPublisher()
+                // Return error, not mock data
+                return Fail(error: error).eraseToAnyPublisher()
             }
             .eraseToAnyPublisher()
     }
@@ -130,7 +124,8 @@ class StockAPIService {
                     guard let symbol = quote.symbol, !symbol.isEmpty else { return nil }
                     
                     let name = quote.shortname ?? quote.symbol ?? symbol
-                    let price = quote.regularMarketPrice ?? (market == .american ? 150.0 : 5000.0)
+                    let price = quote.regularMarketPrice  // No fallback - require real price
+                    guard let price = price else { return nil }  // Skip if no price
                     let currency = market == .american ? "USD" : "JPY"
                     
                     return Stock(

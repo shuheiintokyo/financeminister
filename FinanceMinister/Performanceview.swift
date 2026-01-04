@@ -45,14 +45,56 @@ struct PerformanceView: View {
                                 }
                             }
                             
-                            // Portfolio Total Value Chart (Stacked Area)
-                            portfolioStackedAreaChart
-                            
-                            // Holdings Legend
-                            holdingsLegend
-                            
-                            // Statistics
-                            statisticsCard
+                            // Show Error Message if Connection Failed
+                            if let errorMessage = viewModel.errorMessage {
+                                VStack(spacing: 16) {
+                                    Image(systemName: "wifi.slash")
+                                        .font(.system(size: 48))
+                                        .foregroundColor(.red)
+                                    
+                                    Text(errorMessage)
+                                        .font(.headline)
+                                        .foregroundColor(.red)
+                                        .multilineTextAlignment(.center)
+                                    
+                                    Text("インターネット接続を確認して、もう一度試してください。")
+                                        .font(.caption)
+                                        .foregroundColor(.gray)
+                                        .multilineTextAlignment(.center)
+                                    
+                                    Button(action: {
+                                        viewModel.loadExchangeRateHistory()
+                                        for holding in viewModel.portfolioSummary.holdings {
+                                            viewModel.loadHistoricalData(
+                                                for: holding.stock.symbol,
+                                                market: holding.stock.market
+                                            )
+                                        }
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "arrow.clockwise")
+                                            Text("再試行")
+                                        }
+                                        .frame(maxWidth: .infinity)
+                                        .padding()
+                                        .background(Color.blue)
+                                        .foregroundColor(.white)
+                                        .cornerRadius(8)
+                                    }
+                                }
+                                .padding()
+                                .background(Color(.systemBackground))
+                                .cornerRadius(12)
+                            } else {
+                                // Portfolio Total Value Chart (Stacked Area)
+                                portfolioStackedAreaChart
+                                
+                                // Holdings Legend
+                                holdingsLegend
+                                
+                                // Statistics
+                                statisticsCard
+                            }
                         }
                         .padding()
                     }
@@ -78,133 +120,175 @@ struct PerformanceView: View {
             Text("ポートフォリオ合計評価額")
                 .font(.headline)
             
-            // Stacked Area Chart
-            ZStack {
-                Color(.systemGray6)
+            // Calculate max value for Y-axis
+            let maxPortfolioValue = calculateMaxPortfolioValue()
+            
+            // Stacked Area Chart with Y-axis labels
+            HStack(spacing: 8) {
+                // Y-axis labels
+                VStack(spacing: 0) {
+                    Text("¥\(formatCurrency(maxPortfolioValue))")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                        .frame(height: 40)
+                    
+                    Spacer()
+                    
+                    Text("¥0")
+                        .font(.caption2)
+                        .foregroundColor(.gray)
+                        .frame(height: 40)
+                }
+                .frame(width: 60)
                 
-                if !viewModel.historicalExchangeRates.isEmpty {
-                    Canvas { context,<#arg#>  in
-                        let holdings = viewModel.portfolioSummary.holdings
-                        let exchangeRates = viewModel.historicalExchangeRates
-                        
-                        guard !holdings.isEmpty, !exchangeRates.isEmpty else { return }
-                        
-                        let width = 280.0
-                        let height = 150.0
-                        
-                        // Define colors for each holding
-                        let colors: [Color] = [
-                            Color.blue,
-                            Color.green,
-                            Color.orange,
-                            Color.red,
-                            Color.purple,
-                            Color.pink
-                        ]
-                        
-                        // Calculate portfolio value at each historical point
-                        var portfolioValues: [[Double]] = Array(repeating: [], count: holdings.count)
-                        var maxTotalValue: Double = 0
-                        
-                        for (dateIndex, rate) in exchangeRates.enumerated() {
-                            var dayTotal = 0.0
+                // Chart
+                ZStack {
+                    Color(.systemGray6)
+                    
+                    if !viewModel.historicalExchangeRates.isEmpty {
+                        Canvas { context, size in
+                            let holdings = viewModel.portfolioSummary.holdings
+                            let exchangeRates = viewModel.historicalExchangeRates
                             
-                            for (holdingIndex, holding) in holdings.enumerated() {
-                                // Find price at this date
-                                let holdingPrices = viewModel.historicalPrices.filter {
-                                    $0.symbol == holding.stock.symbol
+                            guard !holdings.isEmpty, !exchangeRates.isEmpty else { return }
+                            
+                            let width = 280.0
+                            let height = 150.0
+                            
+                            // Define colors for each holding
+                            let colors: [Color] = [
+                                Color.blue,
+                                Color.green,
+                                Color.orange,
+                                Color.red,
+                                Color.purple,
+                                Color.pink
+                            ]
+                            
+                            // Calculate portfolio value at each historical point
+                            var portfolioValues: [[Double]] = Array(repeating: [], count: holdings.count)
+                            var maxTotalValue: Double = 0
+                            
+                            for (dateIndex, rate) in exchangeRates.enumerated() {
+                                var dayTotal = 0.0
+                                
+                                for (holdingIndex, holding) in holdings.enumerated() {
+                                    // Find price at this date
+                                    let holdingPrices = viewModel.historicalPrices.filter {
+                                        $0.symbol == holding.stock.symbol
+                                    }
+                                    
+                                    let price = holdingPrices.isEmpty ? holding.stock.currentPrice :
+                                               (holdingPrices.first?.price ?? holding.stock.currentPrice)
+                                    
+                                    let value = price * holding.quantity
+                                    let valueInJpy = holding.stock.market == .american ?
+                                                    (value * rate.rate) : value
+                                    
+                                    portfolioValues[holdingIndex].append(valueInJpy)
+                                    dayTotal += valueInJpy
                                 }
                                 
-                                let price = holdingPrices.isEmpty ? holding.stock.currentPrice :
-                                           (holdingPrices.first?.price ?? holding.stock.currentPrice)
-                                
-                                let value = price * holding.quantity
-                                let valueInJpy = holding.stock.market == .american ?
-                                                (value * rate.rate) : value
-                                
-                                portfolioValues[holdingIndex].append(valueInJpy)
-                                dayTotal += valueInJpy
+                                maxTotalValue = max(maxTotalValue, dayTotal)
                             }
                             
-                            maxTotalValue = max(maxTotalValue, dayTotal)
+                            // Draw stacked areas from bottom to top
+                            var cumulativeValues: [Double] = Array(repeating: 0, count: exchangeRates.count)
+                            
+                            for (holdingIndex, holding) in holdings.enumerated() {
+                                let color = colors[holdingIndex % colors.count]
+                                var path = Path()
+                                
+                                // Bottom line (cumulative from previous holdings)
+                                let firstBottomY = height - (cumulativeValues[0] / max(maxTotalValue, 1)) * height
+                                path.move(to: CGPoint(x: 8, y: firstBottomY))
+                                
+                                // Top line (cumulative including this holding)
+                                for (dateIndex, rate) in exchangeRates.enumerated() {
+                                    let stepX = (width / CGFloat(max(exchangeRates.count - 1, 1)))
+                                    let x = CGFloat(dateIndex) * stepX + 8
+                                    
+                                    cumulativeValues[dateIndex] += portfolioValues[holdingIndex][dateIndex]
+                                    let y = height - (cumulativeValues[dateIndex] / max(maxTotalValue, 1)) * height
+                                    
+                                    path.addLine(to: CGPoint(x: x, y: y + 8))
+                                }
+                                
+                                // Back down along the bottom
+                                for dateIndex in stride(from: exchangeRates.count - 1, through: 0, by: -1) {
+                                    let stepX = (width / CGFloat(max(exchangeRates.count - 1, 1)))
+                                    let x = CGFloat(dateIndex) * stepX + 8
+                                    
+                                    let previousCumulative = cumulativeValues[dateIndex] - portfolioValues[holdingIndex][dateIndex]
+                                    let y = height - (previousCumulative / max(maxTotalValue, 1)) * height
+                                    
+                                    path.addLine(to: CGPoint(x: x, y: y + 8))
+                                }
+                                
+                                path.closeSubpath()
+                                
+                                // Fill with color
+                                context.fill(
+                                    path,
+                                    with: .color(color.opacity(0.7))
+                                )
+                                
+                                // Draw border
+                                context.stroke(
+                                    path,
+                                    with: .color(color),
+                                    lineWidth: 1.5
+                                )
+                            }
                         }
-                        
-                        // Draw stacked areas from bottom to top
-                        var cumulativeValues: [Double] = Array(repeating: 0, count: exchangeRates.count)
-                        
-                        for (holdingIndex, holding) in holdings.enumerated() {
-                            let color = colors[holdingIndex % colors.count]
-                            var path = Path()
-                            
-                            // Bottom line (cumulative from previous holdings)
-                            let firstBottomY = height - (cumulativeValues[0] / max(maxTotalValue, 1)) * height
-                            path.move(to: CGPoint(x: 8, y: firstBottomY))
-                            
-                            // Top line (cumulative including this holding)
-                            for (dateIndex, rate) in exchangeRates.enumerated() {
-                                let stepX = (width / CGFloat(max(exchangeRates.count - 1, 1)))
-                                let x = CGFloat(dateIndex) * stepX + 8
-                                
-                                cumulativeValues[dateIndex] += portfolioValues[holdingIndex][dateIndex]
-                                let y = height - (cumulativeValues[dateIndex] / max(maxTotalValue, 1)) * height
-                                
-                                path.addLine(to: CGPoint(x: x, y: y + 8))
-                            }
-                            
-                            // Back down along the bottom
-                            for dateIndex in stride(from: exchangeRates.count - 1, through: 0, by: -1) {
-                                let stepX = (width / CGFloat(max(exchangeRates.count - 1, 1)))
-                                let x = CGFloat(dateIndex) * stepX + 8
-                                
-                                let previousCumulative = cumulativeValues[dateIndex] - portfolioValues[holdingIndex][dateIndex]
-                                let y = height - (previousCumulative / max(maxTotalValue, 1)) * height
-                                
-                                path.addLine(to: CGPoint(x: x, y: y + 8))
-                            }
-                            
-                            path.closeSubpath()
-                            
-                            // Fill with color
-                            context.fill(
-                                path,
-                                with: .color(color.opacity(0.7))
-                            )
-                            
-                            // Draw border
-                            context.stroke(
-                                path,
-                                with: .color(color),
-                                lineWidth: 1.5
-                            )
+                        .frame(height: 200)
+                    } else {
+                        VStack {
+                            ProgressView()
+                            Text("チャートデータを読み込み中...")
+                                .font(.caption)
+                                .foregroundColor(.gray)
                         }
+                        .frame(height: 200)
                     }
-                    .frame(height: 200)
-                } else {
+                    
                     VStack {
-                        ProgressView()
-                        Text("チャートデータを読み込み中...")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    .frame(height: 200)
-                }
-                
-                VStack {
-                    Spacer()
-                    HStack {
-                        Text(selectedTimeFrame.displayName)
-                            .font(.caption2)
-                            .foregroundColor(.gray)
                         Spacer()
+                        HStack {
+                            Text(selectedTimeFrame.displayName)
+                                .font(.caption2)
+                                .foregroundColor(.gray)
+                            Spacer()
+                        }
+                        .padding(8)
                     }
-                    .padding(8)
                 }
+                .cornerRadius(8)
             }
-            .cornerRadius(8)
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
+    }
+    
+    // Calculate max portfolio value for Y-axis
+    private func calculateMaxPortfolioValue() -> Double {
+        var maxValue = 0.0
+        
+        for rate in viewModel.historicalExchangeRates {
+            var dayTotal = 0.0
+            
+            for holding in viewModel.portfolioSummary.holdings {
+                let price = holding.stock.currentPrice
+                let value = price * holding.quantity
+                let valueInJpy = holding.stock.market == .american ? (value * rate.rate) : value
+                dayTotal += valueInJpy
+            }
+            
+            maxValue = max(maxValue, dayTotal)
+        }
+        
+        return maxValue
     }
     
     // MARK: - Holdings Legend
@@ -266,11 +350,6 @@ struct PerformanceView: View {
                 StatisticRow(
                     label: "現在のポートフォリオ評価額",
                     value: "¥\(formatCurrency(viewModel.portfolioSummary.totalValueInJpy))"
-                )
-                
-                StatisticRow(
-                    label: "投資額",
-                    value: "¥\(formatCurrency(viewModel.portfolioSummary.totalCostBasis))"
                 )
                 
                 StatisticRow(
