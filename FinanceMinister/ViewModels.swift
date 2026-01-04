@@ -22,11 +22,13 @@ class PortfolioViewModel: ObservableObject {
     // MARK: - Portfolio Management
     
     func addHolding(_ holding: PortfolioHolding) {
+        print("DEBUG: Adding holding - \(holding.stock.symbol), qty: \(holding.quantity)")
         holdings.append(holding)
         persistenceController.saveHolding(holding)
     }
     
     func removeHolding(_ holding: PortfolioHolding) {
+        print("DEBUG: Removing holding - \(holding.stock.symbol)")
         holdings.removeAll { $0.id == holding.id }
         persistenceController.deleteHolding(holding)
     }
@@ -38,47 +40,39 @@ class PortfolioViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Portfolio Summary Calculation
+    // MARK: - Portfolio Summary Calculation (SIMPLIFIED - Only Values, No Gain/Loss)
     
     var portfolioSummary: PortfolioSummary {
-        var totalInJapanese: Double = 0
-        var totalInAmerican: Double = 0
-        var totalGainLoss: Double = 0
+        var totalValueInJpy: Double = 0
+        var totalCostBasis: Double = 0
         
+        // Calculate total current value and cost basis
         for holding in holdings {
             let valueInJpy: Double
+            let costInJpy: Double
             
-            switch holding.stock.market {
-            case .japanese:
-                valueInJpy = holding.currentValue
-                totalInJapanese += valueInJpy
-            case .american:
-                valueInJpy = holding.currentValue * currentExchangeRate
-                totalInAmerican += valueInJpy
-            }
-            
-            totalGainLoss += holding.gainLoss * (holding.stock.market == .american ? currentExchangeRate : 1.0)
-        }
-        
-        let totalValue = totalInJapanese + totalInAmerican
-        let totalCost = holdings.reduce(0) { acc, holding in
-            let cost = (holding.purchasePrice * holding.quantity)
             if holding.stock.market == .american {
-                return acc + (cost * currentExchangeRate)
+                // Convert USD to JPY
+                valueInJpy = holding.currentValue * currentExchangeRate
+                costInJpy = (holding.purchasePrice * holding.quantity) * currentExchangeRate
             } else {
-                return acc + cost
+                // Already in JPY
+                valueInJpy = holding.currentValue
+                costInJpy = holding.purchasePrice * holding.quantity
             }
+            
+            totalValueInJpy += valueInJpy
+            totalCostBasis += costInJpy
         }
         
-        let gainLossPercentage = totalCost > 0 ? (totalGainLoss / totalCost) * 100 : 0
+        print("DEBUG: Portfolio Summary")
+        print("  - Total Value in JPY: ¥\(totalValueInJpy)")
+        print("  - Total Cost Basis: ¥\(totalCostBasis)")
+        print("  - Holdings Count: \(holdings.count)")
         
         return PortfolioSummary(
-            totalValueInJpy: totalValue,
-            totalInJapaneseStocks: totalInJapanese,
-            totalInAmericanStocks: totalInAmerican,
-            currentExchangeRate: currentExchangeRate,
-            totalGainLoss: totalGainLoss,
-            totalGainLossPercentage: gainLossPercentage,
+            totalValueInJpy: totalValueInJpy,
+            totalCostBasis: totalCostBasis,
             holdings: holdings
         )
     }
@@ -92,12 +86,83 @@ class PortfolioViewModel: ObservableObject {
     }
     
     func refreshExchangeRate() {
-        // モック実装
-        currentExchangeRate = 149.50
+        print("DEBUG: Refreshing current exchange rate (USD/JPY)")
+        
+        // Fetch real current exchange rate
+        StockAPIService.shared.fetchStockPrice(symbol: "JPY=X", market: .american)
+            .sink { [weak self] completion in
+                switch completion {
+                case .failure(let error):
+                    print("DEBUG: Exchange rate fetch failed: \(error)")
+                    // Fallback to last known rate
+                    print("DEBUG: Using last known rate: ¥\(self?.currentExchangeRate ?? 149.50)")
+                case .finished:
+                    print("DEBUG: Current exchange rate updated successfully")
+                }
+            } receiveValue: { [weak self] rate in
+                self?.currentExchangeRate = rate
+                print("DEBUG: Current exchange rate: ¥\(rate) per USD")
+            }
+            .store(in: &cancellables)
     }
     
     func loadHistoricalData(for symbol: String, market: MarketType) {
-        // モック実装：過去30日分の価格データを生成
+        print("DEBUG: Loading historical data for \(symbol)")
+        
+        // Format symbol for Yahoo Finance
+        let yahooSymbol = market == .american ? symbol : symbol
+        
+        // Try to fetch real data from Yahoo Finance
+        StockAPIService.shared.fetchHistoricalData(symbol: yahooSymbol, market: market)
+            .sink { [weak self] completion in
+                switch completion {
+                case .failure(let error):
+                    print("DEBUG: Historical data API error: \(error.localizedDescription)")
+                    // Fallback to mock data if API fails
+                    self?.loadMockHistoricalData(symbol: symbol, market: market)
+                case .finished:
+                    print("DEBUG: Historical data loaded successfully")
+                }
+            } receiveValue: { [weak self] prices in
+                self?.historicalPrices = prices
+                print("DEBUG: Loaded \(prices.count) price history points")
+                if let firstPrice = prices.first, let lastPrice = prices.last {
+                    print("  - Date range: \(firstPrice.date) to \(lastPrice.date)")
+                    print("  - Price range: \(firstPrice.price) to \(lastPrice.price)")
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
+    func loadExchangeRateHistory() {
+        print("DEBUG: Loading exchange rate history")
+        
+        // Try to fetch real exchange rates
+        StockAPIService.shared.fetchExchangeRateHistory()
+            .sink { [weak self] completion in
+                switch completion {
+                case .failure(let error):
+                    print("DEBUG: Exchange rate history API error: \(error.localizedDescription)")
+                    // Fallback to mock data if API fails
+                    self?.loadMockExchangeRateHistory()
+                case .finished:
+                    print("DEBUG: Exchange rate history loaded successfully")
+                }
+            } receiveValue: { [weak self] rates in
+                self?.historicalExchangeRates = rates
+                print("DEBUG: Loaded \(rates.count) exchange rate history points")
+                if let firstRate = rates.first, let lastRate = rates.last {
+                    print("  - Date range: \(firstRate.date) to \(lastRate.date)")
+                    print("  - Rate range: \(firstRate.rate) to \(lastRate.rate)")
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
+    // MARK: - Fallback Mock Data (if API fails)
+    
+    private func loadMockHistoricalData(symbol: String, market: MarketType) {
+        print("DEBUG: Falling back to mock historical data for \(symbol)")
         var mockPrices: [PriceHistory] = []
         for i in 0..<30 {
             let date = Calendar.current.date(byAdding: .day, value: -i, to: Date()) ?? Date()
@@ -109,8 +174,8 @@ class PortfolioViewModel: ObservableObject {
         historicalPrices = mockPrices.sorted { $0.date < $1.date }
     }
     
-    func loadExchangeRateHistory() {
-        // モック実装：過去30日分の為替レートを生成
+    private func loadMockExchangeRateHistory() {
+        print("DEBUG: Falling back to mock exchange rate history")
         var mockRates: [ExchangeRateHistory] = []
         for i in 0..<30 {
             let date = Calendar.current.date(byAdding: .day, value: -i, to: Date()) ?? Date()
@@ -125,10 +190,16 @@ class PortfolioViewModel: ObservableObject {
     // MARK: - Data Persistence with Core Data
     
     func loadHoldings() {
-        holdings = persistenceController.loadHoldings()
+        let loaded = persistenceController.loadHoldings()
+        print("DEBUG: Loaded \(loaded.count) holdings from Core Data")
+        for holding in loaded {
+            print("  - \(holding.stock.symbol): qty=\(holding.quantity)")
+        }
+        holdings = loaded
     }
     
     func clearAllHoldings() {
+        print("DEBUG: Clearing all holdings")
         holdings.removeAll()
         persistenceController.clearAllHoldings()
     }

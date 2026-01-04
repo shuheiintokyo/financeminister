@@ -178,9 +178,150 @@ class StockAPIService {
             return !japaneseMarketIndicators.contains { symbol.contains($0) }
         }
     }
+    
+    // MARK: - Historical Data Fetching
+    
+    /// Fetch historical price data from Yahoo Finance
+    func fetchHistoricalData(symbol: String, market: MarketType) -> AnyPublisher<[PriceHistory], Error> {
+        let yahooSymbol = formatSymbolForYahoo(symbol, market: market)
+        print("DEBUG: Fetching historical data for \(yahooSymbol)")
+        
+        // Use Yahoo Finance chart API
+        let period1 = Int(Date().addingTimeInterval(-30 * 24 * 3600).timeIntervalSince1970)
+        let period2 = Int(Date().timeIntervalSince1970)
+        let urlString = "https://query1.finance.yahoo.com/v8/finance/chart/\(yahooSymbol)?interval=1d&period1=\(period1)&period2=\(period2)"
+        
+        guard let url = URL(string: urlString) else {
+            print("DEBUG: Invalid URL for historical data")
+            return Fail(error: URLError(.badURL))
+                .eraseToAnyPublisher()
+        }
+        
+        return session.dataTaskPublisher(for: url)
+            .tryMap { data, response in
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else {
+                    throw URLError(.badServerResponse)
+                }
+                return data
+            }
+            .decode(type: YahooChartResponse.self, decoder: JSONDecoder())
+            .tryMap { response -> [PriceHistory] in
+                guard let result = response.chart?.result?.first,
+                      let timestamps = result.timestamp,
+                      let closes = result.indicators?.quote?.first?.close else {
+                    print("DEBUG: Invalid historical data format")
+                    throw URLError(.badServerResponse)
+                }
+                
+                var prices: [PriceHistory] = []
+                for (index, timestamp) in timestamps.enumerated() {
+                    if index < closes.count, let close = closes[index] {
+                        let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
+                        prices.append(PriceHistory(date: date, price: close, symbol: symbol, market: market))
+                    }
+                }
+                
+                print("DEBUG: Got \(prices.count) historical price points")
+                return prices.sorted { $0.date < $1.date }
+            }
+            .catch { error -> AnyPublisher<[PriceHistory], Error> in
+                print("DEBUG: Historical data fetch failed: \(error)")
+                // Return empty on error, caller will use mock data
+                return Fail(error: error).eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    /// Fetch historical exchange rate data
+    func fetchExchangeRateHistory() -> AnyPublisher<[ExchangeRateHistory], Error> {
+        print("DEBUG: Fetching exchange rate history (USD/JPY)")
+        
+        // Try to fetch USD/JPY exchange rate history
+        let period1 = Int(Date().addingTimeInterval(-30 * 24 * 3600).timeIntervalSince1970)
+        let period2 = Int(Date().timeIntervalSince1970)
+        let urlString = "https://query1.finance.yahoo.com/v8/finance/chart/JPY=X?interval=1d&period1=\(period1)&period2=\(period2)"
+        
+        guard let url = URL(string: urlString) else {
+            print("DEBUG: Invalid URL for exchange rate history")
+            return Fail(error: URLError(.badURL))
+                .eraseToAnyPublisher()
+        }
+        
+        return session.dataTaskPublisher(for: url)
+            .tryMap { data, response in
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else {
+                    throw URLError(.badServerResponse)
+                }
+                return data
+            }
+            .decode(type: YahooChartResponse.self, decoder: JSONDecoder())
+            .tryMap { response -> [ExchangeRateHistory] in
+                guard let result = response.chart?.result?.first,
+                      let timestamps = result.timestamp,
+                      let closes = result.indicators?.quote?.first?.close else {
+                    print("DEBUG: Invalid exchange rate data format")
+                    throw URLError(.badServerResponse)
+                }
+                
+                var rates: [ExchangeRateHistory] = []
+                for (index, timestamp) in timestamps.enumerated() {
+                    if index < closes.count, let close = closes[index] {
+                        let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
+                        // Note: JPY=X is quoted as JPY per 1 USD, so we need to convert
+                        rates.append(ExchangeRateHistory(date: date, rate: close))
+                    }
+                }
+                
+                print("DEBUG: Got \(rates.count) historical exchange rate points")
+                return rates.sorted { $0.date < $1.date }
+            }
+            .catch { error -> AnyPublisher<[ExchangeRateHistory], Error> in
+                print("DEBUG: Exchange rate history fetch failed: \(error)")
+                return Fail(error: error).eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
 }
 
-// MARK: - Search Response Model
+// MARK: - Yahoo Finance Chart Response Models
+struct YahooChartResponse: Codable {
+    let chart: ChartData?
+    
+    struct ChartData: Codable {
+        let result: [ChartResult]?
+        let error: String?
+    }
+    
+    struct ChartResult: Codable {
+        let timestamp: [Int]?
+        let indicators: Indicators?
+        
+        enum CodingKeys: String, CodingKey {
+            case timestamp
+            case indicators
+        }
+    }
+    
+    struct Indicators: Codable {
+        let quote: [Quote]?
+        
+        enum CodingKeys: String, CodingKey {
+            case quote
+        }
+    }
+    
+    struct Quote: Codable {
+        let close: [Double?]?
+        
+        enum CodingKeys: String, CodingKey {
+            case close
+        }
+    }
+}
+
+
 struct SearchResponse: Codable {
     let quotes: [QuoteResult]?
     

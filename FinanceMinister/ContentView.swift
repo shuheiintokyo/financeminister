@@ -38,14 +38,14 @@ struct ContentView: View {
 
 
 
-// MARK: - Helper Function
-func formatCurrency(_ value: Double) -> String {
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .decimal
-    formatter.minimumFractionDigits = 0
-    formatter.maximumFractionDigits = 0
-    return formatter.string(from: NSNumber(value: value)) ?? "0"
-}
+//// MARK: - Helper Function
+//func formatCurrency(_ value: Double) -> String {
+//    let formatter = NumberFormatter()
+//    formatter.numberStyle = .decimal
+//    formatter.minimumFractionDigits = 0
+//    formatter.maximumFractionDigits = 0
+//    return formatter.string(from: NSNumber(value: value)) ?? "0"
+//}
 
 #Preview {
     ContentView()
