@@ -90,6 +90,7 @@ class PortfolioViewModel: ObservableObject {
         
         // Fetch real current exchange rate
         StockAPIService.shared.fetchStockPrice(symbol: "JPY=X", market: .american)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] completion in
                 switch completion {
                 case .failure(let error):
@@ -114,6 +115,7 @@ class PortfolioViewModel: ObservableObject {
         
         // Fetch real data from Yahoo Finance
         StockAPIService.shared.fetchHistoricalData(symbol: yahooSymbol, market: market)
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] completion in
                 switch completion {
                 case .failure(let error):
@@ -141,6 +143,7 @@ class PortfolioViewModel: ObservableObject {
         
         // Fetch real exchange rates
         StockAPIService.shared.fetchExchangeRateHistory()
+            .receive(on: DispatchQueue.main)
             .sink { [weak self] completion in
                 switch completion {
                 case .failure(let error):

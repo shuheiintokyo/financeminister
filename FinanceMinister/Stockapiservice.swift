@@ -60,10 +60,23 @@ class StockAPIService {
                 .eraseToAnyPublisher()
         }
         
-        return session.dataTaskPublisher(for: url)
+        // ✅ Add proper headers for Yahoo Finance API
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Mozilla/5.0 (iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1",
+                         forHTTPHeaderField: "User-Agent")
+        request.setValue("https://finance.yahoo.com", forHTTPHeaderField: "Referer")
+        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.timeoutInterval = 15  // Increase timeout
+        
+        return session.dataTaskPublisher(for: request)
             .tryMap { data, response in
                 guard let httpResponse = response as? HTTPURLResponse,
                       (200...299).contains(httpResponse.statusCode) else {
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    print("DEBUG: HTTP Error \(status)")
                     throw URLError(.badServerResponse)
                 }
                 return data
@@ -95,18 +108,29 @@ class StockAPIService {
     func searchStocks(query: String, market: MarketType) -> AnyPublisher<[Stock], Error> {
         print("DEBUG: Searching for '\(query)' in \(market == .japanese ? "Japanese" : "American") market")
         
-        let urlString = "https://query1.finance.yahoo.com/v1/finance/search?q=\(query)&count=10"
-        
         guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
               let url = URL(string: "https://query1.finance.yahoo.com/v1/finance/search?q=\(encodedQuery)&count=10") else {
             return Fail(error: URLError(.badURL))
                 .eraseToAnyPublisher()
         }
         
-        return session.dataTaskPublisher(for: url)
+        // ✅ Add proper headers for Yahoo Finance API
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Mozilla/5.0 (iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1",
+                         forHTTPHeaderField: "User-Agent")
+        request.setValue("https://finance.yahoo.com", forHTTPHeaderField: "Referer")
+        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.timeoutInterval = 15
+        
+        return session.dataTaskPublisher(for: request)
             .tryMap { data, response in
                 guard let httpResponse = response as? HTTPURLResponse,
                       (200...299).contains(httpResponse.statusCode) else {
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    print("DEBUG: Search HTTP Error \(status)")
                     throw URLError(.badServerResponse)
                 }
                 return data
@@ -243,10 +267,23 @@ class StockAPIService {
                 .eraseToAnyPublisher()
         }
         
-        return session.dataTaskPublisher(for: url)
+        // ✅ Add proper headers for Yahoo Finance API
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Mozilla/5.0 (iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1",
+                         forHTTPHeaderField: "User-Agent")
+        request.setValue("https://finance.yahoo.com", forHTTPHeaderField: "Referer")
+        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.timeoutInterval = 15
+        
+        return session.dataTaskPublisher(for: request)
             .tryMap { data, response in
                 guard let httpResponse = response as? HTTPURLResponse,
                       (200...299).contains(httpResponse.statusCode) else {
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    print("DEBUG: Exchange rate HTTP Error \(status)")
                     throw URLError(.badServerResponse)
                 }
                 return data

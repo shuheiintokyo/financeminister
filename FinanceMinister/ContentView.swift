@@ -1,11 +1,12 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var selectedTab: Tab = .portfolio
+    @State private var selectedTab: Tab = .login
     
     enum Tab {
         case portfolio
         case performance
+        case login
         case settings
     }
     
@@ -21,9 +22,16 @@ struct ContentView: View {
             // Performance Tab
             PerformanceView()
                 .tabItem {
-                    Label("パフォーマンス", systemImage: "chart.line.uptrend.xyaxis")
+                    Label("パフォーマンス", systemImage: "chart.line")
                 }
                 .tag(Tab.performance)
+            
+            // Login/Auth Tab
+            LoginView()
+                .tabItem {
+                    Label("ログイン", systemImage: "lock")
+                }
+                .tag(Tab.login)
             
             // Settings Tab
             SettingsView()
@@ -35,17 +43,6 @@ struct ContentView: View {
         .accentColor(.blue)
     }
 }
-
-
-
-//// MARK: - Helper Function
-//func formatCurrency(_ value: Double) -> String {
-//    let formatter = NumberFormatter()
-//    formatter.numberStyle = .decimal
-//    formatter.minimumFractionDigits = 0
-//    formatter.maximumFractionDigits = 0
-//    return formatter.string(from: NSNumber(value: value)) ?? "0"
-//}
 
 #Preview {
     ContentView()

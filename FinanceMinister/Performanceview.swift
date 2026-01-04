@@ -9,7 +9,7 @@ struct PerformanceView: View {
             VStack {
                 if viewModel.portfolioSummary.holdings.isEmpty {
                     VStack(spacing: 16) {
-                        Image(systemName: "chart.line.uptrend.xyaxis")
+                        Image(systemName: "chart.line")
                             .font(.system(size: 48))
                             .foregroundColor(.gray)
                         

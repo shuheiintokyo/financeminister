@@ -3,6 +3,7 @@ import CoreData
 
 @main
 struct FinanceMinisterApp: App {
+    @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject var portfolioViewModel = PortfolioViewModel()
     let persistenceController = PersistenceController.shared
 
