@@ -76,12 +76,28 @@ class YahooOAuth2Manager: NSObject, ObservableObject {
         }
         
         print("DEBUG: Opening Yahoo login")
+        print("DEBUG: Authorization URL: \(url.absoluteString)")
         
         // Step 4: Open in browser (user logs in)
-        UIApplication.shared.open(url) { success in
-            if !success {
-                self.errorMessage = "Failed to open Yahoo login"
-                print("DEBUG: Failed to open URL")
+        DispatchQueue.main.async {
+            print("DEBUG: Attempting to open Safari on main thread")
+            if UIApplication.shared.canOpenURL(url) {
+                print("DEBUG: URL can be opened, calling UIApplication.shared.open")
+                UIApplication.shared.open(url) { success in
+                    if success {
+                        print("DEBUG: Successfully opened Safari")
+                    } else {
+                        DispatchQueue.main.async {
+                            self.errorMessage = "Failed to open Yahoo login"
+                            print("DEBUG: Failed to open URL in Safari")
+                        }
+                    }
+                }
+            } else {
+                print("DEBUG: ERROR - URL cannot be opened by any app!")
+                DispatchQueue.main.async {
+                    self.errorMessage = "Cannot open Yahoo login. Check Safari is installed."
+                }
             }
         }
     }

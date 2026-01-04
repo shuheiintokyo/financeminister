@@ -8,7 +8,7 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.yourcompany.financeminister</string>
+			<string>com.shuhei.financeminister.FinanceMinister</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>financeministerapp</string>

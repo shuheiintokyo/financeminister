@@ -18,13 +18,16 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     // Primary method: handles deep links when app is already running
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey : Any] = [:]) -> Bool {
         print("\n" + String(repeating: "=", count: 70))
-        print("🔴 CRITICAL: AppDelegate application(_:open:options:) CALLED!")
+        print("🔴🔴🔴 CRITICAL: AppDelegate application(_:open:options:) CALLED!!!")
         print(String(repeating: "=", count: 70))
         print("URL: \(url.absoluteString)")
         print("Scheme: \(url.scheme ?? "NIL")")
         print("Host: \(url.host ?? "NIL")")
         print("Path: \(url.path)")
         print("Query: \(url.query ?? "NIL")")
+        if let sourceApp = options[.sourceApplication] {
+            print("Source App: \(sourceApp)")
+        }
         print(String(repeating: "=", count: 70) + "\n")
         
         handleDeepLink(url)
