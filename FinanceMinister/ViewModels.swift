@@ -10,6 +10,7 @@ class PortfolioViewModel: ObservableObject {
     @Published var selectedTimeFrame: TimeFrame = .oneMonth
     @Published var historicalPrices: [PriceHistory] = []
     @Published var historicalExchangeRates: [ExchangeRateHistory] = []
+    @Published var isAuthenticated = true  // No auth needed with Alpha Vantage!
     
     private var cancellables = Set<AnyCancellable>()
     private let persistenceController = PersistenceController.shared
@@ -17,18 +18,20 @@ class PortfolioViewModel: ObservableObject {
     init() {
         loadHoldings()
         refreshExchangeRate()
+        print("✅ PortfolioViewModel initialized - No OAuth needed!")
     }
     
     // MARK: - Portfolio Management
     
     func addHolding(_ holding: PortfolioHolding) {
-        print("DEBUG: Adding holding - \(holding.stock.symbol), qty: \(holding.quantity)")
+        print("📝 Adding holding - \(holding.stock.symbol), qty: \(holding.quantity)")
         holdings.append(holding)
         persistenceController.saveHolding(holding)
+        refreshStockPrices()
     }
     
     func removeHolding(_ holding: PortfolioHolding) {
-        print("DEBUG: Removing holding - \(holding.stock.symbol)")
+        print("🗑️ Removing holding - \(holding.stock.symbol)")
         holdings.removeAll { $0.id == holding.id }
         persistenceController.deleteHolding(holding)
     }
@@ -40,23 +43,20 @@ class PortfolioViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Portfolio Summary Calculation (SIMPLIFIED - Only Values, No Gain/Loss)
+    // MARK: - Portfolio Summary
     
     var portfolioSummary: PortfolioSummary {
         var totalValueInJpy: Double = 0
         var totalCostBasis: Double = 0
         
-        // Calculate total current value and cost basis
         for holding in holdings {
             let valueInJpy: Double
             let costInJpy: Double
             
             if holding.stock.market == .american {
-                // Convert USD to JPY
                 valueInJpy = holding.currentValue * currentExchangeRate
                 costInJpy = (holding.purchasePrice * holding.quantity) * currentExchangeRate
             } else {
-                // Already in JPY
                 valueInJpy = holding.currentValue
                 costInJpy = holding.purchasePrice * holding.quantity
             }
@@ -65,10 +65,7 @@ class PortfolioViewModel: ObservableObject {
             totalCostBasis += costInJpy
         }
         
-        print("DEBUG: Portfolio Summary")
-        print("  - Total Value in JPY: ¥\(totalValueInJpy)")
-        print("  - Total Cost Basis: ¥\(totalCostBasis)")
-        print("  - Holdings Count: \(holdings.count)")
+        print("💼 Portfolio Summary - Value: ¥\(totalValueInJpy), Holdings: \(holdings.count)")
         
         return PortfolioSummary(
             totalValueInJpy: totalValueInJpy,
@@ -80,105 +77,98 @@ class PortfolioViewModel: ObservableObject {
     // MARK: - Data Refreshing
     
     func refreshPortfolio() {
+        print("🔄 Refreshing portfolio...")
         isLoading = true
         refreshExchangeRate()
+        refreshStockPrices()
         isLoading = false
     }
     
     func refreshExchangeRate() {
-        print("DEBUG: Refreshing current exchange rate (USD/JPY)")
+        print("💱 Fetching current USD/JPY exchange rate...")
         
-        // Fetch real current exchange rate
-        StockAPIService.shared.fetchStockPrice(symbol: "JPY=X", market: .american)
+        StockAPIService.shared.fetchExchangeRate()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] completion in
                 switch completion {
                 case .failure(let error):
-                    print("DEBUG: Exchange rate fetch failed: \(error)")
-                    // Fallback to last known rate
-                    print("DEBUG: Using last known rate: ¥\(self?.currentExchangeRate ?? 149.50)")
+                    print("⚠️ Exchange rate fetch failed: \(error)")
                 case .finished:
-                    print("DEBUG: Current exchange rate updated successfully")
+                    print("✅ Exchange rate updated")
                 }
             } receiveValue: { [weak self] rate in
                 self?.currentExchangeRate = rate
-                print("DEBUG: Current exchange rate: ¥\(rate) per USD")
+                print("💱 USD/JPY: \(rate)")
             }
             .store(in: &cancellables)
     }
     
+    private func refreshStockPrices() {
+        print("📊 Refreshing stock prices for \(holdings.count) holdings...")
+        
+        for holding in holdings {
+            StockAPIService.shared.fetchStockPrice(symbol: holding.stock.symbol, market: holding.stock.market)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        print("⚠️ Error fetching \(holding.stock.symbol): \(error)")
+                    }
+                } receiveValue: { [weak self] price in
+                    if let index = self?.holdings.firstIndex(where: { $0.stock.symbol == holding.stock.symbol }) {
+                        var updated = self?.holdings[index]
+                        updated?.stock.currentPrice = price
+                        if let updated = updated {
+                            self?.updateHolding(updated)
+                        }
+                        print("✅ Updated \(holding.stock.symbol): $\(price)")
+                    }
+                }
+                .store(in: &cancellables)
+        }
+    }
+    
     func loadHistoricalData(for symbol: String, market: MarketType) {
-        print("DEBUG: Loading historical data for \(symbol)")
+        print("📈 Loading historical data for \(symbol)")
         
-        // Format symbol for Yahoo Finance
-        let yahooSymbol = market == .american ? symbol : symbol
-        
-        // Fetch real data from Yahoo Finance
-        StockAPIService.shared.fetchHistoricalData(symbol: yahooSymbol, market: market)
+        StockAPIService.shared.fetchHistoricalData(symbol: symbol, market: market)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] completion in
-                switch completion {
-                case .failure(let error):
-                    print("DEBUG: Historical data API error: \(error.localizedDescription)")
-                    self?.errorMessage = "接続に失敗しました。データを取得できません。"
-                    self?.historicalPrices = []  // Clear all data on error
-                case .finished:
-                    print("DEBUG: Historical data loaded successfully")
-                    self?.errorMessage = nil  // Clear error message on success
+                if case .failure(let error) = completion {
+                    print("⚠️ Historical data error: \(error)")
                 }
             } receiveValue: { [weak self] prices in
                 self?.historicalPrices = prices
-                self?.errorMessage = nil  // Clear error on success
-                print("DEBUG: Loaded \(prices.count) price history points")
-                if let firstPrice = prices.first, let lastPrice = prices.last {
-                    print("  - Date range: \(firstPrice.date) to \(lastPrice.date)")
-                    print("  - Price range: \(firstPrice.price) to \(lastPrice.price)")
-                }
+                print("📊 Loaded \(prices.count) historical data points")
             }
             .store(in: &cancellables)
     }
     
     func loadExchangeRateHistory() {
-        print("DEBUG: Loading exchange rate history")
+        print("📈 Loading exchange rate history")
         
-        // Fetch real exchange rates
         StockAPIService.shared.fetchExchangeRateHistory()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] completion in
-                switch completion {
-                case .failure(let error):
-                    print("DEBUG: Exchange rate history API error: \(error.localizedDescription)")
-                    self?.errorMessage = "接続に失敗しました。為替レート履歴を取得できません。"
-                    self?.historicalExchangeRates = []  // Clear all data on error
-                case .finished:
-                    print("DEBUG: Exchange rate history loaded successfully")
-                    self?.errorMessage = nil  // Clear error message on success
+                if case .failure(let error) = completion {
+                    print("⚠️ Exchange rate history error: \(error)")
                 }
             } receiveValue: { [weak self] rates in
                 self?.historicalExchangeRates = rates
-                self?.errorMessage = nil  // Clear error on success
-                print("DEBUG: Loaded \(rates.count) exchange rate history points")
-                if let firstRate = rates.first, let lastRate = rates.last {
-                    print("  - Date range: \(firstRate.date) to \(lastRate.date)")
-                    print("  - Rate range: \(firstRate.rate) to \(lastRate.rate)")
-                }
+                print("💱 Loaded \(rates.count) exchange rate history points")
             }
             .store(in: &cancellables)
     }
     
-    // MARK: - Data Persistence with Core Data
+    // MARK: - Data Persistence
     
     func loadHoldings() {
         let loaded = persistenceController.loadHoldings()
-        print("DEBUG: Loaded \(loaded.count) holdings from Core Data")
-        for holding in loaded {
-            print("  - \(holding.stock.symbol): qty=\(holding.quantity)")
-        }
+        print("📂 Loaded \(loaded.count) holdings from Core Data")
         holdings = loaded
     }
     
     func clearAllHoldings() {
-        print("DEBUG: Clearing all holdings")
+        print("🗑️ Clearing all holdings")
         holdings.removeAll()
         persistenceController.clearAllHoldings()
     }
@@ -197,27 +187,22 @@ class StockSearchViewModel: ObservableObject {
         }
         
         isSearching = true
-        print("DEBUG: Starting search for '\(query)' in \(market.rawValue) market")
+        print("🔍 Searching for '\(query)'")
         
-        // Try real API
         StockAPIService.shared.searchStocks(query: query, market: market)
             .sink { [weak self] completion in
                 self?.isSearching = false
                 switch completion {
                 case .failure(let error):
-                    print("DEBUG: Search API error: \(error.localizedDescription)")
-                    // Show error - no mock data
+                    print("❌ Search error: \(error)")
                     self?.searchResults = []
-                    print("DEBUG: No results found - connection error")
                 case .finished:
-                    print("DEBUG: Search completed successfully")
+                    print("✅ Search completed")
                 }
             } receiveValue: { [weak self] stocks in
                 self?.searchResults = stocks
-                print("DEBUG: Search results: \(stocks.count) stocks found")
+                print("✅ Found \(stocks.count) results")
             }
             .store(in: &cancellables)
     }
-    
-
 }

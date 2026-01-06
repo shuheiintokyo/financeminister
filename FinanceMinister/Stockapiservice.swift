@@ -1,31 +1,80 @@
 import Foundation
 import Combine
 
-// MARK: - Yahoo Finance API Models
-struct YahooQuote: Codable {
+// MARK: - Alpha Vantage Configuration
+class AlphaVantageConfig {
+    static let apiKey = "EGMGXJ92OF398TF6"
+    static let baseURL = "https://www.alphavantage.co/query"
+}
+
+// MARK: - Alpha Vantage Models
+struct AlphaVantageSearchResponse: Codable {
+    let bestMatches: [AlphaVantageQuote]?
+    
+    enum CodingKeys: String, CodingKey {
+        case bestMatches = "bestMatches"
+    }
+}
+
+struct AlphaVantageQuote: Codable {
     let symbol: String
-    let shortName: String?
-    let regularMarketPrice: Double?
+    let name: String
+    let type: String?
+    let region: String?
     let currency: String?
     
     enum CodingKeys: String, CodingKey {
-        case symbol
-        case shortName
-        case regularMarketPrice
-        case currency
+        case symbol = "1. symbol"
+        case name = "2. name"
+        case type = "3. type"
+        case region = "4. region"
+        case currency = "8. currency"
     }
 }
 
-struct YahooQuoteResponse: Codable {
-    let quoteResponse: QuoteResponse?
+struct AlphaVantageGlobalQuote: Codable {
+    let symbol: String?
+    let price: String?
+    let change: String?
+    let changePercent: String?
     
-    struct QuoteResponse: Codable {
-        let result: [YahooQuote]?
-        let error: String?
+    enum CodingKeys: String, CodingKey {
+        case symbol = "01. symbol"
+        case price = "05. price"
+        case change = "09. change"
+        case changePercent = "10. change percent"
     }
 }
 
-// MARK: - Stock API Service
+struct AlphaVantageGlobalQuoteResponse: Codable {
+    let globalQuote: AlphaVantageGlobalQuote?
+    
+    enum CodingKeys: String, CodingKey {
+        case globalQuote = "Global Quote"
+    }
+}
+
+struct AlphaVantageExchangeRate: Codable {
+    let rate: String?
+    let bidPrice: String?
+    let askPrice: String?
+    
+    enum CodingKeys: String, CodingKey {
+        case rate = "5. Exchange Rate"
+        case bidPrice = "8. Bid Price"
+        case askPrice = "9. Ask Price"
+    }
+}
+
+struct AlphaVantageExchangeRateResponse: Codable {
+    let exchangeRate: AlphaVantageExchangeRate?
+    
+    enum CodingKeys: String, CodingKey {
+        case exchangeRate = "Realtime Currency Exchange Rate"
+    }
+}
+
+// MARK: - Stock API Service (Alpha Vantage)
 class StockAPIService {
     static let shared = StockAPIService()
     private let session = URLSession.shared
@@ -34,95 +83,28 @@ class StockAPIService {
     
     private init() {}
     
-    /// Fetch real stock price from Yahoo Finance
-    /// - Parameters:
-    ///   - symbol: Stock symbol (e.g., "AAPL", "9984.T")
-    ///   - market: Market type (Japanese or American)
-    /// - Returns: Current price as Double
+    // MARK: - Fetch Stock Price
     func fetchStockPrice(symbol: String, market: MarketType) -> AnyPublisher<Double, Error> {
         // Check cache first
         if let cached = priceCache[symbol],
            Date().timeIntervalSince(cached.timestamp) < cacheExpirationInterval {
-            print("DEBUG: Using cached price for \(symbol): \(cached.price)")
+            print("✅ Using cached price for \(symbol): $\(cached.price)")
             return Just(cached.price)
                 .setFailureType(to: Error.self)
                 .eraseToAnyPublisher()
         }
         
-        // Format symbol for Yahoo Finance
-        let yahooSymbol = formatSymbolForYahoo(symbol, market: market)
-        print("DEBUG: Fetching real price for \(yahooSymbol)")
+        print("📊 Fetching real price for \(symbol) from Alpha Vantage")
         
-        let urlString = "https://query1.finance.yahoo.com/v10/finance/quoteSummary/\(yahooSymbol)?modules=price"
+        let urlString = "\(AlphaVantageConfig.baseURL)?function=GLOBAL_QUOTE&symbol=\(symbol)&apikey=\(AlphaVantageConfig.apiKey)"
         
         guard let url = URL(string: urlString) else {
             return Fail(error: URLError(.badURL))
                 .eraseToAnyPublisher()
         }
         
-        // ✅ Add proper headers for Yahoo Finance API
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Mozilla/5.0 (iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1",
-                         forHTTPHeaderField: "User-Agent")
-        request.setValue("https://finance.yahoo.com", forHTTPHeaderField: "Referer")
-        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
-        request.timeoutInterval = 15  // Increase timeout
-        
-        return session.dataTaskPublisher(for: request)
-            .tryMap { data, response in
-                guard let httpResponse = response as? HTTPURLResponse,
-                      (200...299).contains(httpResponse.statusCode) else {
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    print("DEBUG: HTTP Error \(status)")
-                    throw URLError(.badServerResponse)
-                }
-                return data
-            }
-            .decode(type: YahooQuoteResponse.self, decoder: JSONDecoder())
-            .tryMap { response -> Double in
-                // Try new API format first
-                if let quoteResponse = response.quoteResponse,
-                   let result = quoteResponse.result?.first,
-                   let price = result.regularMarketPrice {
-                    self.priceCache[symbol] = (price: price, timestamp: Date())
-                    print("DEBUG: Got real price for \(symbol): \(price)")
-                    return price
-                }
-                
-                // API response invalid - return error, not mock data
-                print("DEBUG: API response invalid for \(symbol)")
-                throw URLError(.badServerResponse)
-            }
-            .catch { error -> AnyPublisher<Double, Error> in
-                print("DEBUG: Yahoo Finance API error: \(error.localizedDescription)")
-                // Return error, not mock data
-                return Fail(error: error).eraseToAnyPublisher()
-            }
-            .eraseToAnyPublisher()
-    }
-    
-    /// Search for stocks using Yahoo Finance
-    func searchStocks(query: String, market: MarketType) -> AnyPublisher<[Stock], Error> {
-        print("DEBUG: Searching for '\(query)' in \(market == .japanese ? "Japanese" : "American") market")
-        
-        guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
-              let url = URL(string: "https://query1.finance.yahoo.com/v1/finance/search?q=\(encodedQuery)&count=10") else {
-            return Fail(error: URLError(.badURL))
-                .eraseToAnyPublisher()
-        }
-        
-        // ✅ Add proper headers for Yahoo Finance API
-        var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Mozilla/5.0 (iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1",
-                         forHTTPHeaderField: "User-Agent")
-        request.setValue("https://finance.yahoo.com", forHTTPHeaderField: "Referer")
-        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 15
         
         return session.dataTaskPublisher(for: request)
@@ -130,44 +112,83 @@ class StockAPIService {
                 guard let httpResponse = response as? HTTPURLResponse,
                       (200...299).contains(httpResponse.statusCode) else {
                     let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    print("DEBUG: Search HTTP Error \(status)")
+                    print("❌ HTTP Error \(status)")
                     throw URLError(.badServerResponse)
                 }
                 return data
             }
-            .tryMap { data -> [Stock] in
-                let decoder = JSONDecoder()
-                let response = try decoder.decode(SearchResponse.self, from: data)
+            .decode(type: AlphaVantageGlobalQuoteResponse.self, decoder: JSONDecoder())
+            .tryMap { response -> Double in
+                guard let globalQuote = response.globalQuote,
+                      let priceStr = globalQuote.price,
+                      let price = Double(priceStr) else {
+                    print("❌ Could not extract price from Alpha Vantage response")
+                    throw URLError(.badServerResponse)
+                }
                 
-                // Filter results by market
-                let filteredResults = response.quotes?.filter { quote in
-                    self.isSymbolInMarket(quote.symbol ?? "", market: market)
-                } ?? []
+                self.priceCache[symbol] = (price: price, timestamp: Date())
+                print("✅ Got price for \(symbol): $\(price)")
+                return price
+            }
+            .catch { error -> AnyPublisher<Double, Error> in
+                print("❌ Alpha Vantage API error: \(error.localizedDescription)")
+                return Fail(error: error).eraseToAnyPublisher()
+            }
+            .eraseToAnyPublisher()
+    }
+    
+    // MARK: - Search Stocks
+    func searchStocks(query: String, market: MarketType) -> AnyPublisher<[Stock], Error> {
+        print("🔍 Searching for '\(query)' in \(market == .japanese ? "Japanese" : "American") market")
+        
+        guard let encodedQuery = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              let url = URL(string: "\(AlphaVantageConfig.baseURL)?function=SYMBOL_SEARCH&keywords=\(encodedQuery)&apikey=\(AlphaVantageConfig.apiKey)") else {
+            return Fail(error: URLError(.badURL))
+                .eraseToAnyPublisher()
+        }
+        
+        var request = URLRequest(url: url)
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
+        request.timeoutInterval = 15
+        
+        return session.dataTaskPublisher(for: request)
+            .tryMap { data, response in
+                guard let httpResponse = response as? HTTPURLResponse,
+                      (200...299).contains(httpResponse.statusCode) else {
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    print("❌ Search HTTP Error \(status)")
+                    throw URLError(.badServerResponse)
+                }
+                return data
+            }
+            .decode(type: AlphaVantageSearchResponse.self, decoder: JSONDecoder())
+            .tryMap { response -> [Stock] in
+                guard let matches = response.bestMatches, !matches.isEmpty else {
+                    print("❌ No search results")
+                    return []
+                }
                 
-                let stocks = filteredResults.compactMap { quote -> Stock? in
+                let stocks = matches.compactMap { quote -> Stock? in
                     guard let symbol = quote.symbol, !symbol.isEmpty else { return nil }
                     
-                    let name = quote.shortname ?? quote.symbol ?? symbol
-                    let price = quote.regularMarketPrice  // No fallback - require real price
-                    guard let price = price else { return nil }  // Skip if no price
-                    let currency = market == .american ? "USD" : "JPY"
+                    let name = quote.name
+                    let currency = quote.currency ?? (market == .american ? "USD" : "JPY")
                     
                     return Stock(
                         id: symbol,
                         symbol: symbol,
                         name: name,
                         market: market,
-                        currentPrice: price,
+                        currentPrice: 0,
                         currency: currency
                     )
                 }
                 
-                print("DEBUG: Found \(stocks.count) stocks for '\(query)' in \(market.rawValue) market")
+                print("✅ Found \(stocks.count) stocks for '\(query)'")
                 return stocks
             }
             .catch { error -> AnyPublisher<[Stock], Error> in
-                print("DEBUG: Search error: \(error.localizedDescription)")
-                // Return empty on error
+                print("❌ Search error: \(error.localizedDescription)")
                 return Just([])
                     .setFailureType(to: Error.self)
                     .eraseToAnyPublisher()
@@ -175,199 +196,64 @@ class StockAPIService {
             .eraseToAnyPublisher()
     }
     
-    // MARK: - Helper Methods
-    
-    private func formatSymbolForYahoo(_ symbol: String, market: MarketType) -> String {
-        // Yahoo Finance uses ".T" suffix for Tokyo stocks
-        // US stocks are just the symbol
-        if market == .japanese && !symbol.contains(".") {
-            return "\(symbol).T"
-        }
-        return symbol
-    }
-    
-    private func isSymbolInMarket(_ symbol: String, market: MarketType) -> Bool {
-        let japaneseMarketIndicators = [".T", ".F", "jp:", "JP:"]
-        let americanMarketIndicators = ["NASDAQ", "NYSE", "AMEX"]
+    // MARK: - Fetch Exchange Rate (USD to JPY)
+    func fetchExchangeRate() -> AnyPublisher<Double, Error> {
+        print("💱 Fetching USD/JPY exchange rate from Alpha Vantage")
         
-        if market == .japanese {
-            return japaneseMarketIndicators.contains { symbol.contains($0) }
-        } else {
-            // Most US stocks don't have a suffix, so if it's not Japanese, assume US
-            return !japaneseMarketIndicators.contains { symbol.contains($0) }
-        }
-    }
-    
-    // MARK: - Historical Data Fetching
-    
-    /// Fetch historical price data from Yahoo Finance
-    func fetchHistoricalData(symbol: String, market: MarketType) -> AnyPublisher<[PriceHistory], Error> {
-        let yahooSymbol = formatSymbolForYahoo(symbol, market: market)
-        print("DEBUG: Fetching historical data for \(yahooSymbol)")
-        
-        // Use Yahoo Finance chart API
-        let period1 = Int(Date().addingTimeInterval(-30 * 24 * 3600).timeIntervalSince1970)
-        let period2 = Int(Date().timeIntervalSince1970)
-        let urlString = "https://query1.finance.yahoo.com/v8/finance/chart/\(yahooSymbol)?interval=1d&period1=\(period1)&period2=\(period2)"
+        let urlString = "\(AlphaVantageConfig.baseURL)?function=CURRENCY_EXCHANGE_RATE&from_currency=USD&to_currency=JPY&apikey=\(AlphaVantageConfig.apiKey)"
         
         guard let url = URL(string: urlString) else {
-            print("DEBUG: Invalid URL for historical data")
             return Fail(error: URLError(.badURL))
                 .eraseToAnyPublisher()
         }
         
-        return session.dataTaskPublisher(for: url)
-            .tryMap { data, response in
-                guard let httpResponse = response as? HTTPURLResponse,
-                      (200...299).contains(httpResponse.statusCode) else {
-                    throw URLError(.badServerResponse)
-                }
-                return data
-            }
-            .decode(type: YahooChartResponse.self, decoder: JSONDecoder())
-            .tryMap { response -> [PriceHistory] in
-                guard let result = response.chart?.result?.first,
-                      let timestamps = result.timestamp,
-                      let closes = result.indicators?.quote?.first?.close else {
-                    print("DEBUG: Invalid historical data format")
-                    throw URLError(.badServerResponse)
-                }
-                
-                var prices: [PriceHistory] = []
-                for (index, timestamp) in timestamps.enumerated() {
-                    if index < closes.count, let close = closes[index] {
-                        let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
-                        prices.append(PriceHistory(date: date, price: close, symbol: symbol, market: market))
-                    }
-                }
-                
-                print("DEBUG: Got \(prices.count) historical price points")
-                return prices.sorted { $0.date < $1.date }
-            }
-            .catch { error -> AnyPublisher<[PriceHistory], Error> in
-                print("DEBUG: Historical data fetch failed: \(error)")
-                // Return empty on error, caller will use mock data
-                return Fail(error: error).eraseToAnyPublisher()
-            }
-            .eraseToAnyPublisher()
-    }
-    
-    /// Fetch historical exchange rate data
-    func fetchExchangeRateHistory() -> AnyPublisher<[ExchangeRateHistory], Error> {
-        print("DEBUG: Fetching exchange rate history (USD/JPY)")
-        
-        // Try to fetch USD/JPY exchange rate history
-        let period1 = Int(Date().addingTimeInterval(-30 * 24 * 3600).timeIntervalSince1970)
-        let period2 = Int(Date().timeIntervalSince1970)
-        let urlString = "https://query1.finance.yahoo.com/v8/finance/chart/JPY=X?interval=1d&period1=\(period1)&period2=\(period2)"
-        
-        guard let url = URL(string: urlString) else {
-            print("DEBUG: Invalid URL for exchange rate history")
-            return Fail(error: URLError(.badURL))
-                .eraseToAnyPublisher()
-        }
-        
-        // ✅ Add proper headers for Yahoo Finance API
         var request = URLRequest(url: url)
-        request.httpMethod = "GET"
-        request.setValue("Mozilla/5.0 (iPhone OS 14_7_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Mobile/15E148 Safari/604.1",
-                         forHTTPHeaderField: "User-Agent")
-        request.setValue("https://finance.yahoo.com", forHTTPHeaderField: "Referer")
-        request.setValue("gzip, deflate, br", forHTTPHeaderField: "Accept-Encoding")
-        request.setValue("application/json", forHTTPHeaderField: "Accept")
-        request.setValue("en-US,en;q=0.9", forHTTPHeaderField: "Accept-Language")
+        request.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15", forHTTPHeaderField: "User-Agent")
         request.timeoutInterval = 15
         
         return session.dataTaskPublisher(for: request)
             .tryMap { data, response in
                 guard let httpResponse = response as? HTTPURLResponse,
                       (200...299).contains(httpResponse.statusCode) else {
-                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-                    print("DEBUG: Exchange rate HTTP Error \(status)")
                     throw URLError(.badServerResponse)
                 }
                 return data
             }
-            .decode(type: YahooChartResponse.self, decoder: JSONDecoder())
-            .tryMap { response -> [ExchangeRateHistory] in
-                guard let result = response.chart?.result?.first,
-                      let timestamps = result.timestamp,
-                      let closes = result.indicators?.quote?.first?.close else {
-                    print("DEBUG: Invalid exchange rate data format")
+            .decode(type: AlphaVantageExchangeRateResponse.self, decoder: JSONDecoder())
+            .tryMap { response -> Double in
+                guard let rate = response.exchangeRate,
+                      let rateValue = Double(rate.rate ?? "") else {
+                    print("❌ Could not extract exchange rate")
                     throw URLError(.badServerResponse)
                 }
                 
-                var rates: [ExchangeRateHistory] = []
-                for (index, timestamp) in timestamps.enumerated() {
-                    if index < closes.count, let close = closes[index] {
-                        let date = Date(timeIntervalSince1970: TimeInterval(timestamp))
-                        // Note: JPY=X is quoted as JPY per 1 USD, so we need to convert
-                        rates.append(ExchangeRateHistory(date: date, rate: close))
-                    }
-                }
-                
-                print("DEBUG: Got \(rates.count) historical exchange rate points")
-                return rates.sorted { $0.date < $1.date }
+                print("✅ Got USD/JPY rate: \(rateValue)")
+                return rateValue
             }
-            .catch { error -> AnyPublisher<[ExchangeRateHistory], Error> in
-                print("DEBUG: Exchange rate history fetch failed: \(error)")
-                return Fail(error: error).eraseToAnyPublisher()
+            .catch { error -> AnyPublisher<Double, Error> in
+                print("⚠️ Exchange rate fetch failed: \(error.localizedDescription)")
+                // Fallback to reasonable rate
+                return Just(149.50)
+                    .setFailureType(to: Error.self)
+                    .eraseToAnyPublisher()
             }
             .eraseToAnyPublisher()
     }
-}
-
-// MARK: - Yahoo Finance Chart Response Models
-struct YahooChartResponse: Codable {
-    let chart: ChartData?
     
-    struct ChartData: Codable {
-        let result: [ChartResult]?
-        let error: String?
+    // MARK: - Historical Data (Not Available in Free Tier)
+    func fetchHistoricalData(symbol: String, market: MarketType) -> AnyPublisher<[PriceHistory], Error> {
+        print("⚠️ Historical data not available in Alpha Vantage free tier")
+        // Return empty array for free tier
+        return Just([])
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
     }
     
-    struct ChartResult: Codable {
-        let timestamp: [Int]?
-        let indicators: Indicators?
-        
-        enum CodingKeys: String, CodingKey {
-            case timestamp
-            case indicators
-        }
-    }
-    
-    struct Indicators: Codable {
-        let quote: [Quote]?
-        
-        enum CodingKeys: String, CodingKey {
-            case quote
-        }
-    }
-    
-    struct Quote: Codable {
-        let close: [Double?]?
-        
-        enum CodingKeys: String, CodingKey {
-            case close
-        }
-    }
-}
-
-
-struct SearchResponse: Codable {
-    let quotes: [QuoteResult]?
-    
-    struct QuoteResult: Codable {
-        let symbol: String?
-        let shortname: String?
-        let regularMarketPrice: Double?
-        let exchange: String?
-        
-        enum CodingKeys: String, CodingKey {
-            case symbol
-            case shortname
-            case regularMarketPrice
-            case exchange
-        }
+    func fetchExchangeRateHistory() -> AnyPublisher<[ExchangeRateHistory], Error> {
+        print("⚠️ Exchange rate history not available in Alpha Vantage free tier")
+        // Return empty array for free tier
+        return Just([])
+            .setFailureType(to: Error.self)
+            .eraseToAnyPublisher()
     }
 }
