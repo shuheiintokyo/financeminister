@@ -115,11 +115,28 @@ class PortfolioViewModel: ObservableObject {
                     }
                 } receiveValue: { [weak self] price in
                     if let index = self?.holdings.firstIndex(where: { $0.stock.symbol == holding.stock.symbol }) {
-                        var updated = self?.holdings[index]
-                        updated?.stock.currentPrice = price
-                        if let updated = updated {
-                            self?.updateHolding(updated)
-                        }
+                        // Create new stock with updated price
+                        var currentHolding = self?.holdings[index]
+                        let updatedStock = Stock(
+                            id: currentHolding?.stock.id ?? "",
+                            symbol: currentHolding?.stock.symbol ?? "",
+                            name: currentHolding?.stock.name ?? "",
+                            market: currentHolding?.stock.market ?? .american,
+                            currentPrice: price,
+                            currency: currentHolding?.stock.currency ?? "USD"
+                        )
+                        
+                        // Create new holding with updated stock
+                        let updatedHolding = PortfolioHolding(
+                            id: currentHolding?.id ?? UUID(),
+                            stock: updatedStock,
+                            quantity: currentHolding?.quantity ?? 0,
+                            purchasePrice: currentHolding?.purchasePrice ?? 0,
+                            purchaseDate: currentHolding?.purchaseDate ?? Date(),
+                            account: currentHolding?.account ?? "Default"
+                        )
+                        
+                        self?.holdings[index] = updatedHolding
                         print("✅ Updated \(holding.stock.symbol): $\(price)")
                     }
                 }

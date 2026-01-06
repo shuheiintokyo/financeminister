@@ -8,11 +8,9 @@
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
 			<key>CFBundleURLName</key>
-			<string>com.shuhei.financeminister.FinanceMinister</string>
+			<string></string>
 			<key>CFBundleURLSchemes</key>
-			<array>
-				<string>financeministerapp</string>
-			</array>
+			<array/>
 		</dict>
 	</array>
 </dict>

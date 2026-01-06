@@ -79,13 +79,12 @@ class StockAPIService {
     static let shared = StockAPIService()
     private let session = URLSession.shared
     private var priceCache: [String: (price: Double, timestamp: Date)] = [:]
-    private let cacheExpirationInterval: TimeInterval = 300 // 5 minutes
+    private let cacheExpirationInterval: TimeInterval = 300
     
     private init() {}
     
     // MARK: - Fetch Stock Price
     func fetchStockPrice(symbol: String, market: MarketType) -> AnyPublisher<Double, Error> {
-        // Check cache first
         if let cached = priceCache[symbol],
            Date().timeIntervalSince(cached.timestamp) < cacheExpirationInterval {
             print("✅ Using cached price for \(symbol): $\(cached.price)")
@@ -168,20 +167,26 @@ class StockAPIService {
                     return []
                 }
                 
-                let stocks = matches.compactMap { quote -> Stock? in
-                    guard let symbol = quote.symbol, !symbol.isEmpty else { return nil }
+                var stocks: [Stock] = []
+                
+                for quote in matches {
+                    // symbol is a String (not optional), so just check if it's not empty
+                    guard !quote.symbol.isEmpty else {
+                        continue
+                    }
                     
                     let name = quote.name
                     let currency = quote.currency ?? (market == .american ? "USD" : "JPY")
                     
-                    return Stock(
-                        id: symbol,
-                        symbol: symbol,
+                    let stock = Stock(
+                        id: quote.symbol,
+                        symbol: quote.symbol,
                         name: name,
                         market: market,
                         currentPrice: 0,
                         currency: currency
                     )
+                    stocks.append(stock)
                 }
                 
                 print("✅ Found \(stocks.count) stocks for '\(query)'")
@@ -196,7 +201,7 @@ class StockAPIService {
             .eraseToAnyPublisher()
     }
     
-    // MARK: - Fetch Exchange Rate (USD to JPY)
+    // MARK: - Fetch Exchange Rate
     func fetchExchangeRate() -> AnyPublisher<Double, Error> {
         print("💱 Fetching USD/JPY exchange rate from Alpha Vantage")
         
@@ -232,7 +237,6 @@ class StockAPIService {
             }
             .catch { error -> AnyPublisher<Double, Error> in
                 print("⚠️ Exchange rate fetch failed: \(error.localizedDescription)")
-                // Fallback to reasonable rate
                 return Just(149.50)
                     .setFailureType(to: Error.self)
                     .eraseToAnyPublisher()
@@ -240,10 +244,9 @@ class StockAPIService {
             .eraseToAnyPublisher()
     }
     
-    // MARK: - Historical Data (Not Available in Free Tier)
+    // MARK: - Historical Data
     func fetchHistoricalData(symbol: String, market: MarketType) -> AnyPublisher<[PriceHistory], Error> {
         print("⚠️ Historical data not available in Alpha Vantage free tier")
-        // Return empty array for free tier
         return Just([])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
@@ -251,9 +254,9 @@ class StockAPIService {
     
     func fetchExchangeRateHistory() -> AnyPublisher<[ExchangeRateHistory], Error> {
         print("⚠️ Exchange rate history not available in Alpha Vantage free tier")
-        // Return empty array for free tier
         return Just([])
             .setFailureType(to: Error.self)
             .eraseToAnyPublisher()
     }
 }
+
