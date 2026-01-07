@@ -33,6 +33,8 @@
 		0550BA042F0A3012002EDA0C /* Exceptions for "FinanceMinister" folder in "FinanceMinister" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				Features/Settings/Views/DataManagementView.swift,
+				Features/StockSearch/ViewModels/StockSearchViewModel.swift,
 				Info.plist,
 			);
 			target = 056B8B922F08F3D400DFC46D /* FinanceMinister */;

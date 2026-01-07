@@ -1,3 +1,11 @@
+//
+//  PersistenceController.swift
+//  FinanceMinister
+//
+//  Created by Shuhei Kinugasa on 2026/01/07.
+//
+
+
 import Foundation
 import CoreData
 
@@ -133,3 +141,4 @@ class PersistenceController {
 // NOTE: HoldingEntity is auto-generated from your .xcdatamodel file
 // Xcode will automatically generate the HoldingEntity class and fetchRequest()
 // Do NOT manually define the class here, as it will conflict with code generation
+

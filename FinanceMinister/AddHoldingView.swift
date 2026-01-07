@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // MARK: - Add Holding View
 struct AddHoldingView: View {
@@ -12,7 +13,7 @@ struct AddHoldingView: View {
     @State private var isSearching: Bool = false
     @State private var showClearButton: Bool = false
     
-    private var cancellables = Combine.Set<AnyCancellable>()
+//    private var cancellables = Combine.Set<AnyCancellable>()
     
     var canAddHolding: Bool {
         selectedStock != nil && !quantity.isEmpty && Double(quantity) ?? 0 > 0

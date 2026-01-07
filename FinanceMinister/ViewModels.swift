@@ -17,6 +17,7 @@ class PortfolioViewModel: NSObject, ObservableObject {
     
     // MARK: - Private Properties
     private let stockAPIService = StockAPIService.shared
+    private let viewContext = PersistenceController.shared.container.viewContext
     
     override init() {
         super.init()
@@ -32,7 +33,7 @@ class PortfolioViewModel: NSObject, ObservableObject {
         fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \HoldingEntity.id, ascending: true)]
         
         do {
-            let entities = try PersistenceController.shared.container.viewContext.fetch(fetchRequest)
+            let entities = try viewContext.fetch(fetchRequest)
             self.holdings = entities.map { entity in
                 let stock = Stock(
                     id: entity.id?.uuidString ?? "",
@@ -66,7 +67,7 @@ class PortfolioViewModel: NSObject, ObservableObject {
         fetchRequest.sortDescriptors = [NSSortDescriptor(keyPath: \PortfolioSnapshotEntity.date, ascending: true)]
         
         do {
-            let entities = try PersistenceController.shared.container.viewContext.fetch(fetchRequest)
+            let entities = try viewContext.fetch(fetchRequest)
             self.portfolioHistory = entities.compactMap { entity in
                 guard let id = entity.id,
                       let date = entity.date else { return nil }
@@ -92,13 +93,13 @@ class PortfolioViewModel: NSObject, ObservableObject {
         }
         
         // Save to Core Data
-        let entity = PortfolioSnapshotEntity(context: PersistenceController.shared.container.viewContext)
+        let entity = PortfolioSnapshotEntity(context: viewContext)
         entity.id = snapshot.id
         entity.date = snapshot.date
         entity.totalValue = snapshot.totalValue
         
         do {
-            try PersistenceController.shared.container.viewContext.save()
+            try viewContext.save()
             print("💾 Saved portfolio snapshot: ¥\(String(format: "%.0f", snapshot.totalValue))")
         } catch {
             print("❌ Error saving snapshot: \(error)")
@@ -119,7 +120,7 @@ class PortfolioViewModel: NSObject, ObservableObject {
         holdings.append(holding)
         
         // Save to Core Data
-        let entity = HoldingEntity(context: PersistenceController.shared.container.viewContext)
+        let entity = HoldingEntity(context: viewContext)
         entity.id = holding.id
         entity.symbol = stock.symbol
         entity.stockName = stock.name
@@ -132,7 +133,7 @@ class PortfolioViewModel: NSObject, ObservableObject {
         entity.account = "Default"
         
         do {
-            try PersistenceController.shared.container.viewContext.save()
+            try viewContext.save()
             print("📝 Adding holding - \(stock.symbol), qty: \(quantity)")
         } catch {
             print("❌ Error saving holding: \(error)")
@@ -151,11 +152,11 @@ class PortfolioViewModel: NSObject, ObservableObject {
         fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
         
         do {
-            let results = try PersistenceController.shared.container.viewContext.fetch(fetchRequest)
+            let results = try viewContext.fetch(fetchRequest)
             for entity in results {
-                PersistenceController.shared.container.viewContext.delete(entity)
+                viewContext.delete(entity)
             }
-            try PersistenceController.shared.container.viewContext.save()
+            try viewContext.save()
         } catch {
             print("❌ Error deleting holding: \(error)")
         }
@@ -190,7 +191,8 @@ class PortfolioViewModel: NSObject, ObservableObject {
             .sink { [weak self] results in
                 for (holdingId, price) in results {
                     if let index = self?.holdings.firstIndex(where: { $0.id == holdingId }) {
-                        var updatedHolding = self!.holdings[index]
+                        guard let self = self else { return }
+                        var updatedHolding = self.holdings[index]
                         
                         let updatedStock = Stock(
                             id: updatedHolding.stock.id,
@@ -210,17 +212,17 @@ class PortfolioViewModel: NSObject, ObservableObject {
                             account: updatedHolding.account
                         )
                         
-                        self?.holdings[index] = updatedHolding
+                        self.holdings[index] = updatedHolding
                         
                         // Update in Core Data
                         let fetchRequest: NSFetchRequest<HoldingEntity> = HoldingEntity.fetchRequest()
                         fetchRequest.predicate = NSPredicate(format: "id == %@", holdingId as CVarArg)
                         
                         do {
-                            let results = try PersistenceController.shared.container.viewContext.fetch(fetchRequest)
+                            let results = try self.viewContext.fetch(fetchRequest)
                             if let entity = results.first {
                                 entity.currentPrice = price
-                                try PersistenceController.shared.container.viewContext.save()
+                                try self.viewContext.save()
                             }
                         } catch {
                             print("❌ Error updating price in Core Data: \(error)")
