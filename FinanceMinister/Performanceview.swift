@@ -1,407 +1,300 @@
 import SwiftUI
+import Charts
 
+// MARK: - Performance View
 struct PerformanceView: View {
-    @EnvironmentObject var viewModel: PortfolioViewModel
-    @State private var selectedTimeFrame: TimeFrame = .oneMonth
+    @ObservedObject var viewModel: PortfolioViewModel
+    @State private var selectedTimeRange: TimeRange = .oneMonth
     
-    var body: some View {
-        NavigationView {
-            VStack {
-                if viewModel.portfolioSummary.holdings.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "chart.line")
-                            .font(.system(size: 48))
-                            .foregroundColor(.gray)
-                        
-                        Text("データがありません")
-                            .font(.headline)
-                        
-                        Text("ポートフォリオタブから株を追加してください")
-                            .font(.caption)
-                            .foregroundColor(.gray)
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(.systemGroupedBackground))
-                } else {
-                    ScrollView {
-                        VStack(spacing: 20) {
-                            // Time Frame Picker
-                            Picker("期間", selection: $selectedTimeFrame) {
-                                ForEach(TimeFrame.allCases, id: \.self) { timeFrame in
-                                    Text(timeFrame.displayName).tag(timeFrame)
-                                }
-                            }
-                            .pickerStyle(.segmented)
-                            .padding()
-                            .onChange(of: selectedTimeFrame) { newValue in
-                                viewModel.selectedTimeFrame = newValue
-                                viewModel.loadExchangeRateHistory()
-                                // Reload all historical data for all holdings
-                                for holding in viewModel.portfolioSummary.holdings {
-                                    viewModel.loadHistoricalData(
-                                        for: holding.stock.symbol,
-                                        market: holding.stock.market
-                                    )
-                                }
-                            }
-                            
-                            // Show Error Message if Connection Failed
-                            if let errorMessage = viewModel.errorMessage {
-                                VStack(spacing: 16) {
-                                    Image(systemName: "wifi.slash")
-                                        .font(.system(size: 48))
-                                        .foregroundColor(.red)
-                                    
-                                    Text(errorMessage)
-                                        .font(.headline)
-                                        .foregroundColor(.red)
-                                        .multilineTextAlignment(.center)
-                                    
-                                    Text("インターネット接続を確認して、もう一度試してください。")
-                                        .font(.caption)
-                                        .foregroundColor(.gray)
-                                        .multilineTextAlignment(.center)
-                                    
-                                    Button(action: {
-                                        viewModel.loadExchangeRateHistory()
-                                        for holding in viewModel.portfolioSummary.holdings {
-                                            viewModel.loadHistoricalData(
-                                                for: holding.stock.symbol,
-                                                market: holding.stock.market
-                                            )
-                                        }
-                                    }) {
-                                        HStack {
-                                            Image(systemName: "arrow.clockwise")
-                                            Text("再試行")
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding()
-                                        .background(Color.blue)
-                                        .foregroundColor(.white)
-                                        .cornerRadius(8)
-                                    }
-                                }
-                                .padding()
-                                .background(Color(.systemBackground))
-                                .cornerRadius(12)
-                            } else {
-                                // Portfolio Total Value Chart (Stacked Area)
-                                portfolioStackedAreaChart
-                                
-                                // Holdings Legend
-                                holdingsLegend
-                                
-                                // Statistics
-                                statisticsCard
-                            }
-                        }
-                        .padding()
-                    }
-                }
+    enum TimeRange: Hashable {
+        case oneWeek
+        case oneMonth
+        case threeMonths
+        case oneYear
+        case fiveYears
+        
+        var label: String {
+            switch self {
+            case .oneWeek: return "1週間"
+            case .oneMonth: return "1ヶ月"
+            case .threeMonths: return "3ヶ月"
+            case .oneYear: return "1年"
+            case .fiveYears: return "5年"
             }
-            .navigationTitle("パフォーマンス")
-            .onAppear {
-                viewModel.loadExchangeRateHistory()
-                // Load historical data for all holdings
-                for holding in viewModel.portfolioSummary.holdings {
-                    viewModel.loadHistoricalData(
-                        for: holding.stock.symbol,
-                        market: holding.stock.market
-                    )
-                }
+        }
+        
+        var days: Int {
+            switch self {
+            case .oneWeek: return 7
+            case .oneMonth: return 30
+            case .threeMonths: return 90
+            case .oneYear: return 365
+            case .fiveYears: return 1825
             }
         }
     }
     
-    // MARK: - Portfolio Stacked Area Chart
-    private var portfolioStackedAreaChart: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("ポートフォリオ合計評価額")
-                .font(.headline)
-            
-            // Calculate max value for Y-axis
-            let maxPortfolioValue = calculateMaxPortfolioValue()
-            
-            // Stacked Area Chart with Y-axis labels
-            HStack(spacing: 8) {
-                // Y-axis labels
-                VStack(spacing: 0) {
-                    Text("¥\(formatCurrency(maxPortfolioValue))")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
-                        .frame(height: 40)
+    // MARK: - Computed Properties
+    var filteredHistory: [PortfolioSnapshot] {
+        let now = Date()
+        let calendar = Calendar.current
+        
+        let cutoffDate = calendar.date(byAdding: .day, value: -selectedTimeRange.days, to: now) ?? now
+        return viewModel.portfolioHistory.filter { $0.date >= cutoffDate }.sorted { $0.date < $1.date }
+    }
+    
+    var minValue: Double {
+        filteredHistory.map { $0.totalValue }.min() ?? 0
+    }
+    
+    var maxValue: Double {
+        filteredHistory.map { $0.totalValue }.max() ?? 0
+    }
+    
+    var averageValue: Double {
+        guard !filteredHistory.isEmpty else { return 0 }
+        let sum = filteredHistory.reduce(0) { $0 + $1.totalValue }
+        return sum / Double(filteredHistory.count)
+    }
+    
+    var valueChange: Double {
+        guard filteredHistory.count >= 2 else { return 0 }
+        return filteredHistory.last!.totalValue - filteredHistory.first!.totalValue
+    }
+    
+    var percentChange: Double {
+        guard !filteredHistory.isEmpty, filteredHistory.first!.totalValue != 0 else { return 0 }
+        return (valueChange / filteredHistory.first!.totalValue) * 100
+    }
+    
+    // MARK: - Body
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Title
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("パフォーマンス")
+                            .font(.system(.title2, design: .default))
+                            .fontWeight(.bold)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
                     
-                    Spacer()
-                    
-                    Text("¥0")
-                        .font(.caption2)
-                        .foregroundColor(.gray)
-                        .frame(height: 40)
-                }
-                .frame(width: 60)
-                
-                // Chart
-                ZStack {
-                    Color(.systemGray6)
-                    
-                    if !viewModel.historicalExchangeRates.isEmpty {
-                        Canvas { context, size in
-                            let holdings = viewModel.portfolioSummary.holdings
-                            let exchangeRates = viewModel.historicalExchangeRates
-                            
-                            guard !holdings.isEmpty, !exchangeRates.isEmpty else { return }
-                            
-                            let width = 280.0
-                            let height = 150.0
-                            
-                            // Define colors for each holding
-                            let colors: [Color] = [
-                                Color.blue,
-                                Color.green,
-                                Color.orange,
-                                Color.red,
-                                Color.purple,
-                                Color.pink
-                            ]
-                            
-                            // Calculate portfolio value at each historical point
-                            var portfolioValues: [[Double]] = Array(repeating: [], count: holdings.count)
-                            var maxTotalValue: Double = 0
-                            
-                            for (dateIndex, rate) in exchangeRates.enumerated() {
-                                var dayTotal = 0.0
-                                
-                                for (holdingIndex, holding) in holdings.enumerated() {
-                                    // Find price at this date
-                                    let holdingPrices = viewModel.historicalPrices.filter {
-                                        $0.symbol == holding.stock.symbol
-                                    }
-                                    
-                                    let price = holdingPrices.isEmpty ? holding.stock.currentPrice :
-                                               (holdingPrices.first?.price ?? holding.stock.currentPrice)
-                                    
-                                    let value = price * holding.quantity
-                                    let valueInJpy = holding.stock.market == .american ?
-                                                    (value * rate.rate) : value
-                                    
-                                    portfolioValues[holdingIndex].append(valueInJpy)
-                                    dayTotal += valueInJpy
+                    // Time Range Buttons
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach([TimeRange.oneWeek, .oneMonth, .threeMonths, .oneYear, .fiveYears], id: \.self) { range in
+                                Button(action: { selectedTimeRange = range }) {
+                                    Text(range.label)
+                                        .font(.caption)
+                                        .fontWeight(.medium)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 8)
+                                        .background(selectedTimeRange == range ? Color.blue : Color(.systemGray5))
+                                        .foregroundColor(selectedTimeRange == range ? .white : .black)
+                                        .cornerRadius(20)
                                 }
-                                
-                                maxTotalValue = max(maxTotalValue, dayTotal)
-                            }
-                            
-                            // Draw stacked areas from bottom to top
-                            var cumulativeValues: [Double] = Array(repeating: 0, count: exchangeRates.count)
-                            
-                            for (holdingIndex, holding) in holdings.enumerated() {
-                                let color = colors[holdingIndex % colors.count]
-                                var path = Path()
-                                
-                                // Bottom line (cumulative from previous holdings)
-                                let firstBottomY = height - (cumulativeValues[0] / max(maxTotalValue, 1)) * height
-                                path.move(to: CGPoint(x: 8, y: firstBottomY))
-                                
-                                // Top line (cumulative including this holding)
-                                for (dateIndex, rate) in exchangeRates.enumerated() {
-                                    let stepX = (width / CGFloat(max(exchangeRates.count - 1, 1)))
-                                    let x = CGFloat(dateIndex) * stepX + 8
-                                    
-                                    cumulativeValues[dateIndex] += portfolioValues[holdingIndex][dateIndex]
-                                    let y = height - (cumulativeValues[dateIndex] / max(maxTotalValue, 1)) * height
-                                    
-                                    path.addLine(to: CGPoint(x: x, y: y + 8))
-                                }
-                                
-                                // Back down along the bottom
-                                for dateIndex in stride(from: exchangeRates.count - 1, through: 0, by: -1) {
-                                    let stepX = (width / CGFloat(max(exchangeRates.count - 1, 1)))
-                                    let x = CGFloat(dateIndex) * stepX + 8
-                                    
-                                    let previousCumulative = cumulativeValues[dateIndex] - portfolioValues[holdingIndex][dateIndex]
-                                    let y = height - (previousCumulative / max(maxTotalValue, 1)) * height
-                                    
-                                    path.addLine(to: CGPoint(x: x, y: y + 8))
-                                }
-                                
-                                path.closeSubpath()
-                                
-                                // Fill with color
-                                context.fill(
-                                    path,
-                                    with: .color(color.opacity(0.7))
-                                )
-                                
-                                // Draw border
-                                context.stroke(
-                                    path,
-                                    with: .color(color),
-                                    lineWidth: 1.5
-                                )
                             }
                         }
-                        .frame(height: 200)
+                        .padding(.horizontal)
+                    }
+                    
+                    // Portfolio Value Summary
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("ポートフォリオ合計評価額")
+                            .font(.subheadline)
+                            .foregroundColor(.gray)
+                        
+                        Text("¥\(String(format: "%.0f", viewModel.totalPortfolioValue))")
+                            .font(.system(.title, design: .default))
+                            .fontWeight(.bold)
+                        
+                        HStack(spacing: 20) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("変化額")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                Text("¥\(String(format: "%.0f", valueChange))")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(valueChange >= 0 ? .green : .red)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("変化率")
+                                    .font(.caption)
+                                    .foregroundColor(.gray)
+                                Text("\(String(format: "%.2f", percentChange))%")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(percentChange >= 0 ? .green : .red)
+                            }
+                            
+                            Spacer()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
+                    
+                    // Line Chart
+                    if !filteredHistory.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("推移")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                                .padding(.horizontal)
+                            
+                            Chart(filteredHistory) { snapshot in
+                                LineMark(
+                                    x: .value("Date", snapshot.date),
+                                    y: .value("Value", snapshot.totalValue)
+                                )
+                                .foregroundStyle(.blue)
+                                .lineStyle(StrokeStyle(lineWidth: 2))
+                                
+                                PointMark(
+                                    x: .value("Date", snapshot.date),
+                                    y: .value("Value", snapshot.totalValue)
+                                )
+                                .foregroundStyle(.blue)
+                                .symbolSize(50)
+                            }
+                            .chartYAxis {
+                                AxisMarks(position: .leading) { value in
+                                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2]))
+                                    AxisValueLabel()
+                                        .font(.caption2)
+                                }
+                            }
+                            .chartXAxis {
+                                AxisMarks(position: .bottom) { value in
+                                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2]))
+                                    AxisValueLabel(format: .dateTime.month().day())
+                                        .font(.caption2)
+                                }
+                            }
+                            .frame(height: 250)
+                            .padding()
+                            .background(Color(.systemGray6))
+                            .cornerRadius(12)
+                            .padding(.horizontal)
+                        }
                     } else {
-                        VStack {
+                        VStack(spacing: 12) {
                             ProgressView()
                             Text("チャートデータを読み込み中...")
                                 .font(.caption)
                                 .foregroundColor(.gray)
                         }
-                        .frame(height: 200)
+                        .frame(height: 250)
+                        .frame(maxWidth: .infinity)
+                        .background(Color(.systemGray6))
+                        .cornerRadius(12)
+                        .padding()
                     }
                     
-                    VStack {
-                        Spacer()
-                        HStack {
-                            Text(selectedTimeFrame.displayName)
-                                .font(.caption2)
-                                .foregroundColor(.gray)
-                            Spacer()
-                        }
-                        .padding(8)
+                    // Chart Statistics
+                    VStack(spacing: 12) {
+                        StatRow(label: "最高値", value: "¥\(String(format: "%.0f", maxValue))")
+                        Divider()
+                        StatRow(label: "最安値", value: "¥\(String(format: "%.0f", minValue))")
+                        Divider()
+                        StatRow(label: "平均値", value: "¥\(String(format: "%.0f", averageValue))")
                     }
-                }
-                .cornerRadius(8)
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-    }
-    
-    // Calculate max portfolio value for Y-axis
-    private func calculateMaxPortfolioValue() -> Double {
-        var maxValue = 0.0
-        
-        for rate in viewModel.historicalExchangeRates {
-            var dayTotal = 0.0
-            
-            for holding in viewModel.portfolioSummary.holdings {
-                let price = holding.stock.currentPrice
-                let value = price * holding.quantity
-                let valueInJpy = holding.stock.market == .american ? (value * rate.rate) : value
-                dayTotal += valueInJpy
-            }
-            
-            maxValue = max(maxValue, dayTotal)
-        }
-        
-        return maxValue
-    }
-    
-    // MARK: - Holdings Legend
-    private var holdingsLegend: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("保有銘柄別構成")
-                .font(.headline)
-            
-            let colors: [Color] = [
-                Color.blue,
-                Color.green,
-                Color.orange,
-                Color.red,
-                Color.purple,
-                Color.pink
-            ]
-            
-            VStack(spacing: 8) {
-                ForEach(viewModel.portfolioSummary.holdings.indices, id: \.self) { index in
-                    let holding = viewModel.portfolioSummary.holdings[index]
-                    let color = colors[index % colors.count]
+                    .padding()
+                    .background(Color(.systemGray6))
+                    .cornerRadius(12)
+                    .padding(.horizontal)
                     
-                    HStack(spacing: 12) {
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(color.opacity(0.7))
-                            .frame(width: 16, height: 16)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(holding.stock.name)
-                                .font(.subheadline)
-                                .fontWeight(.semibold)
-                            Text(holding.stock.symbol)
-                                .font(.caption)
-                                .foregroundColor(.gray)
+                    // Holdings Section
+                    if !viewModel.holdings.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("保有銘柄別構成")
+                                .font(.headline)
+                                .padding(.horizontal)
+                            
+                            ForEach(viewModel.holdings, id: \.id) { holding in
+                                HoldingRowView(holding: holding, exchangeRate: viewModel.exchangeRate)
+                            }
                         }
-                        
-                        Spacer()
-                        
-                        Text("¥\(formatCurrency(holding.stock.market == .american ? holding.currentValue * viewModel.currentExchangeRate : holding.currentValue))")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
+                        .padding(.horizontal)
                     }
-                    .padding(.vertical, 4)
+                    
+                    Spacer(minLength: 20)
                 }
+                .padding(.vertical)
             }
+            .navigationTitle("パフォーマンス")
+            .navigationBarTitleDisplayMode(.inline)
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-    }
-    
-    // MARK: - Statistics Card
-    private var statisticsCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("統計")
-                .font(.headline)
-            
-            VStack(spacing: 8) {
-                StatisticRow(
-                    label: "現在のポートフォリオ評価額",
-                    value: "¥\(formatCurrency(viewModel.portfolioSummary.totalValueInJpy))"
-                )
-                
-                StatisticRow(
-                    label: "現在の為替レート",
-                    value: "¥\(String(format: "%.2f", viewModel.currentExchangeRate)) / USD"
-                )
-                
-                StatisticRow(
-                    label: "保有銘柄数",
-                    value: "\(viewModel.portfolioSummary.holdings.count)"
-                )
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
     }
 }
 
-// MARK: - Helper Views
-struct StatisticRow: View {
+// MARK: - Stat Row Component
+struct StatRow: View {
     let label: String
     let value: String
-    var valueColor: Color = .black
     
     var body: some View {
         HStack {
             Text(label)
                 .font(.caption)
                 .foregroundColor(.gray)
-            
             Spacer()
-            
             Text(value)
                 .font(.caption)
                 .fontWeight(.semibold)
-                .foregroundColor(valueColor)
         }
-        .padding(.vertical, 4)
     }
 }
 
-// MARK: - Helper Function
-func formatCurrency(_ value: Double) -> String {
-    let formatter = NumberFormatter()
-    formatter.numberStyle = .decimal
-    formatter.minimumFractionDigits = 0
-    formatter.maximumFractionDigits = 0
-    return formatter.string(from: NSNumber(value: value)) ?? "0"
+// MARK: - Holding Row Component
+struct HoldingRowView: View {
+    let holding: PortfolioHolding
+    let exchangeRate: Double
+    
+    var holdingValue: Double {
+        holding.stock.currentPrice * holding.quantity * exchangeRate
+    }
+    
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(holding.stock.name)
+                    .font(.body)
+                    .fontWeight(.semibold)
+                Text(holding.stock.symbol)
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+            
+            Spacer()
+            
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("¥\(String(format: "%.0f", holdingValue))")
+                    .font(.body)
+                    .fontWeight(.semibold)
+                Text("×\(String(format: "%.2f", holding.quantity))")
+                    .font(.caption)
+                    .foregroundColor(.gray)
+            }
+        }
+        .padding()
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
+    }
 }
 
-#Preview {
-    PerformanceView()
-        .environmentObject(PortfolioViewModel())
+// MARK: - Preview
+#if DEBUG
+struct PerformanceView_Previews: PreviewProvider {
+    static var previews: some View {
+        let viewModel = PortfolioViewModel()
+        PerformanceView(viewModel: viewModel)
+    }
 }
+#endif
