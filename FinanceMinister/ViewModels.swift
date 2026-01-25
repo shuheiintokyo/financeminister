@@ -2,27 +2,35 @@ import Foundation
 import Combine
 import CoreData
 
-// MARK: - Portfolio View Model
+// MARK: - Updated Portfolio View Model
 class PortfolioViewModel: NSObject, ObservableObject {
     // MARK: - Published Properties
     @Published var holdings: [PortfolioHolding] = []
     @Published var totalPortfolioValue: Double = 0.0
-    @Published var exchangeRate: Double = 149.50
+    @Published var currentExchangeRate: Double = 155.0
     @Published var isAuthenticated = true
     @Published var isLoading = false
     @Published var portfolioHistory: [PortfolioSnapshot] = []
+    @Published var portfolioSummary: PortfolioSummary = PortfolioSummary(totalValueInJpy: 0, totalCostBasis: 0, holdings: [])
     
     // MARK: - Public Properties
     var cancellables: Set<AnyCancellable> = []
     
     // MARK: - Private Properties
-    private let stockAPIService = StockAPIService.shared
+    private let backendAPIService = BackendAPIService.shared  // NEW: Using Vercel backend
+    private let stockAPIService = StockAPIService.shared      // FALLBACK: Keep for compatibility
     private let viewContext = PersistenceController.shared.container.viewContext
     
     override init() {
         super.init()
         loadHoldings()
         loadPortfolioHistory()
+        refreshPortfolio()
+    }
+    
+    // MARK: - Refresh Portfolio (Main Entry Point)
+    func refreshPortfolio() {
+        print("🔄 Refreshing portfolio...")
         fetchExchangeRate()
         updateStockPrices()
     }
@@ -58,7 +66,7 @@ class PortfolioViewModel: NSObject, ObservableObject {
             print("❌ Error loading holdings: \(error)")
         }
         
-        updatePortfolioValue()
+        updatePortfolioSummary()
     }
     
     // MARK: - Load Portfolio History from Core Data
@@ -71,7 +79,7 @@ class PortfolioViewModel: NSObject, ObservableObject {
             self.portfolioHistory = entities.compactMap { entity in
                 guard let id = entity.id,
                       let date = entity.date else { return nil }
-                return PortfolioSnapshot(date: date, totalValue: entity.totalValue)
+                return PortfolioSnapshot(date: date, totalValue: entity.totalvalue)
             }
             print("📈 Loaded \(self.portfolioHistory.count) portfolio history snapshots")
         } catch {
@@ -79,77 +87,41 @@ class PortfolioViewModel: NSObject, ObservableObject {
         }
     }
     
-    // MARK: - Record Portfolio Snapshot
-    func recordPortfolioSnapshot() {
-        let snapshot = PortfolioSnapshot(
-            date: Date(),
-            totalValue: totalPortfolioValue
-        )
-        portfolioHistory.append(snapshot)
-        
-        // Keep only last 90 data points (3 months of daily data)
-        if portfolioHistory.count > 90 {
-            portfolioHistory.removeFirst()
-        }
-        
-        // Save to Core Data
-        let entity = PortfolioSnapshotEntity(context: viewContext)
-        entity.id = snapshot.id
-        entity.date = snapshot.date
-        entity.totalValue = snapshot.totalValue
-        
-        do {
-            try viewContext.save()
-            print("💾 Saved portfolio snapshot: ¥\(String(format: "%.0f", snapshot.totalValue))")
-        } catch {
-            print("❌ Error saving snapshot: \(error)")
-        }
-    }
-    
-    // MARK: - Add Holding
-    func addHolding(stock: Stock, quantity: Double, purchasePrice: Double) {
-        let holding = PortfolioHolding(
-            id: UUID(),
-            stock: stock,
-            quantity: quantity,
-            purchasePrice: purchasePrice,
-            purchaseDate: Date(),
-            account: "Default"
-        )
-        
+    // MARK: - Add Holding (Compatible with existing code)
+    func addHolding(_ holding: PortfolioHolding) {
         holdings.append(holding)
         
         // Save to Core Data
         let entity = HoldingEntity(context: viewContext)
         entity.id = holding.id
-        entity.symbol = stock.symbol
-        entity.stockName = stock.name
-        entity.marketType = stock.market == .japanese ? "japanese" : "american"
-        entity.currentPrice = stock.currentPrice
-        entity.currency = stock.currency
-        entity.quantity = quantity
-        entity.purchasePrice = purchasePrice
-        entity.purchaseDate = Date()
-        entity.account = "Default"
+        entity.symbol = holding.stock.symbol
+        entity.stockName = holding.stock.name
+        entity.marketType = holding.stock.market == .japanese ? "japanese" : "american"
+        entity.currentPrice = holding.stock.currentPrice
+        entity.currency = holding.stock.currency
+        entity.quantity = holding.quantity
+        entity.purchasePrice = holding.purchasePrice
+        entity.purchaseDate = holding.purchaseDate
+        entity.account = holding.account
         
         do {
             try viewContext.save()
-            print("📝 Adding holding - \(stock.symbol), qty: \(quantity)")
+            print("✅ Added holding: \(holding.stock.symbol)")
         } catch {
             print("❌ Error saving holding: \(error)")
         }
         
-        updatePortfolioValue()
+        updatePortfolioSummary()
         updateStockPrices()
     }
     
     // MARK: - Remove Holding
-    func removeHolding(id: UUID) {
-        holdings.removeAll { $0.id == id }
+    func removeHolding(_ holding: PortfolioHolding) {
+        holdings.removeAll { $0.id == holding.id }
         
         // Delete from Core Data
         let fetchRequest: NSFetchRequest<HoldingEntity> = HoldingEntity.fetchRequest()
-        fetchRequest.predicate = NSPredicate(format: "id == %@", id as CVarArg)
+        fetchRequest.predicate = NSPredicate(format: "id == %@", holding.id as CVarArg)
         
         do {
             let results = try viewContext.fetch(fetchRequest)
@@ -157,24 +129,26 @@ class PortfolioViewModel: NSObject, ObservableObject {
                 viewContext.delete(entity)
             }
             try viewContext.save()
+            print("✅ Removed holding: \(holding.stock.symbol)")
         } catch {
             print("❌ Error deleting holding: \(error)")
         }
         
-        updatePortfolioValue()
+        updatePortfolioSummary()
     }
     
-    // MARK: - Update Stock Prices
-    func updateStockPrices() {
-        print("📊 Refreshing stock prices for \(holdings.count) holdings...")
+    // MARK: - Update Stock Prices (Using Vercel Backend)
+    private func updateStockPrices() {
+        isLoading = true
+        print("📊 Updating stock prices from Vercel backend...")
         
         let publishers = holdings.map { holding in
-            stockAPIService.fetchStockPrice(symbol: holding.stock.symbol, market: holding.stock.market)
+            backendAPIService.fetchStockPrice(symbol: holding.stock.symbol, market: holding.stock.market)
                 .map { price -> (UUID, Double) in
                     (holding.id, price)
                 }
                 .catch { error -> AnyPublisher<(UUID, Double), Never> in
-                    print("❌ Failed to fetch price for \(holding.stock.symbol): \(error)")
+                    print("⚠️ Failed to fetch \(holding.stock.symbol), keeping cached price")
                     return Just((holding.id, holding.stock.currentPrice))
                         .eraseToAnyPublisher()
                 }
@@ -182,6 +156,7 @@ class PortfolioViewModel: NSObject, ObservableObject {
         }
         
         if publishers.isEmpty {
+            isLoading = false
             return
         }
         
@@ -225,82 +200,122 @@ class PortfolioViewModel: NSObject, ObservableObject {
                                 try self.viewContext.save()
                             }
                         } catch {
-                            print("❌ Error updating price in Core Data: \(error)")
+                            print("❌ Error updating Core Data: \(error)")
                         }
                         
-                        print("✅ Updated \(updatedHolding.stock.symbol): $\(price)")
+                        print("✅ Updated \(updatedHolding.stock.symbol): \(price)")
                     }
                 }
                 
-                self?.updatePortfolioValue()
+                self?.updatePortfolioSummary()
                 self?.recordPortfolioSnapshot()
+                self?.isLoading = false
             }
             .store(in: &cancellables)
     }
     
-    // MARK: - Fetch Exchange Rate
+    // MARK: - Fetch Exchange Rate (Using Vercel Backend)
     func fetchExchangeRate() {
-        print("💱 Fetching current USD/JPY exchange rate...")
+        print("💱 Fetching exchange rate from Vercel backend...")
         
-        stockAPIService.fetchExchangeRate()
+        backendAPIService.fetchExchangeRate()
             .receive(on: DispatchQueue.main)
             .sink { [weak self] completion in
                 if case .failure(let error) = completion {
-                    print("❌ Exchange rate error: \(error)")
+                    print("⚠️ Exchange rate error: \(error)")
                 }
             } receiveValue: { [weak self] rate in
-                self?.exchangeRate = rate
-                print("💱 USD/JPY: \(rate)")
-                print("✅ Exchange rate updated")
-                self?.updatePortfolioValue()
+                self?.currentExchangeRate = rate
+                print("✅ Exchange rate: \(rate) JPY/USD")
+                self?.updatePortfolioSummary()
             }
             .store(in: &cancellables)
     }
     
-    // MARK: - Update Portfolio Value
-    private func updatePortfolioValue() {
-        var totalValue: Double = 0
+    // MARK: - Update Portfolio Summary
+    private func updatePortfolioSummary() {
+        var totalValueInJpy: Double = 0
+        var totalCostBasis: Double = 0
         
         for holding in holdings {
-            let holdingValue = holding.stock.currentPrice * holding.quantity * exchangeRate
-            totalValue += holdingValue
+            let holdingValue = holding.stock.currentPrice * holding.quantity
+            
+            // Convert to JPY if USD
+            let holdingValueInJpy = holding.stock.market == .american ?
+                holdingValue * currentExchangeRate :
+                holdingValue
+            
+            totalValueInJpy += holdingValueInJpy
+            
+            // Cost basis (always in JPY)
+            let costInJpy = holding.purchasePrice * holding.quantity
+            totalCostBasis += costInJpy
         }
         
-        self.totalPortfolioValue = totalValue
-        print("💼 Portfolio Summary - Value: ¥\(String(format: "%.1f", totalValue)), Holdings: \(holdings.count)")
+        self.totalPortfolioValue = totalValueInJpy
+        
+        self.portfolioSummary = PortfolioSummary(
+            totalValueInJpy: totalValueInJpy,
+            totalCostBasis: totalCostBasis,
+            holdings: holdings
+        )
+        
+        print("💼 Portfolio: ¥\(String(format: "%.0f", totalValueInJpy)) (\(holdings.count) holdings)")
     }
     
-    // MARK: - Load Historical Data
-    func loadHistoricalData() {
-        print("📈 Loading historical data...")
+    // MARK: - Record Portfolio Snapshot
+    func recordPortfolioSnapshot() {
+        let snapshot = PortfolioSnapshot(
+            date: Date(),
+            totalValue: totalPortfolioValue
+        )
+        portfolioHistory.append(snapshot)
         
-        for holding in holdings {
-            stockAPIService.fetchHistoricalData(symbol: holding.stock.symbol, market: holding.stock.market)
-                .receive(on: DispatchQueue.main)
-                .sink { completion in
-                    if case .failure(let error) = completion {
-                        print("❌ Historical data error: \(error)")
-                    }
-                } receiveValue: { data in
-                    print("📊 Loaded \(data.count) historical data points")
-                }
-                .store(in: &cancellables)
+        // Keep only last 90 data points
+        if portfolioHistory.count > 90 {
+            portfolioHistory.removeFirst()
+        }
+        
+        // Save to Core Data
+        let entity = PortfolioSnapshotEntity(context: viewContext)
+        entity.id = snapshot.id
+        entity.date = snapshot.date
+        entity.totalvalue = snapshot.totalValue
+        
+        do {
+            try viewContext.save()
+            print("💾 Snapshot saved: ¥\(String(format: "%.0f", snapshot.totalValue))")
+        } catch {
+            print("❌ Error saving snapshot: \(error)")
         }
     }
     
-    // MARK: - Load Exchange Rate History
-    func loadExchangeRateHistory() {
-        print("📈 Loading exchange rate history")
+    // MARK: - Clear All Holdings
+    func clearAllHoldings() {
+        holdings.removeAll()
         
-        stockAPIService.fetchExchangeRateHistory()
-            .receive(on: DispatchQueue.main)
-            .sink { completion in
-                if case .failure(let error) = completion {
-                    print("❌ Exchange rate history error: \(error)")
-                }
-            } receiveValue: { history in
-                print("💱 Loaded \(history.count) exchange rate history points")
+        let fetchRequest: NSFetchRequest<HoldingEntity> = HoldingEntity.fetchRequest()
+        
+        do {
+            let results = try viewContext.fetch(fetchRequest)
+            for entity in results {
+                viewContext.delete(entity)
             }
-            .store(in: &cancellables)
+            try viewContext.save()
+            print("✅ Cleared all holdings")
+        } catch {
+            print("❌ Error clearing holdings: \(error)")
+        }
+        
+        updatePortfolioSummary()
     }
+}
+
+// MARK: - Helper Function
+func formatCurrency(_ value: Double) -> String {
+    let formatter = NumberFormatter()
+    formatter.numberStyle = .decimal
+    formatter.minimumFractionDigits = 2
+    formatter.maximumFractionDigits = 2
+    return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
 }
