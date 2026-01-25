@@ -34,7 +34,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Features/Settings/Views/DataManagementView.swift,
-				Features/StockSearch/ViewModels/StockSearchViewModel.swift,
 				Info.plist,
 			);
 			target = 056B8B922F08F3D400DFC46D /* FinanceMinister */;

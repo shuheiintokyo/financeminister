@@ -17,15 +17,21 @@ class PortfolioViewModel: NSObject, ObservableObject {
     var cancellables: Set<AnyCancellable> = []
     
     // MARK: - Private Properties
-    private let backendAPIService = BackendAPIService.shared  // NEW: Using Vercel backend
-    private let stockAPIService = StockAPIService.shared      // FALLBACK: Keep for compatibility
+    private let backendAPIService = BackendAPIService.shared  // Vercel backend
+    private let stockAPIService = StockAPIService.shared      // Fallback for search
     private let viewContext = PersistenceController.shared.container.viewContext
+    private var autoRefreshTimer: Timer?
     
     override init() {
         super.init()
         loadHoldings()
         loadPortfolioHistory()
         refreshPortfolio()
+        startAutoRefresh(intervalSeconds: 300) // Auto-refresh every 5 minutes
+    }
+    
+    deinit {
+        autoRefreshTimer?.invalidate()
     }
     
     // MARK: - Refresh Portfolio (Main Entry Point)
@@ -137,81 +143,86 @@ class PortfolioViewModel: NSObject, ObservableObject {
         updatePortfolioSummary()
     }
     
-    // MARK: - Update Stock Prices (Using Vercel Backend)
+    // MARK: - Update Stock Prices (Using Vercel Backend with Batch Endpoint)
     private func updateStockPrices() {
         isLoading = true
         print("📊 Updating stock prices from Vercel backend...")
         
-        let publishers = holdings.map { holding in
-            backendAPIService.fetchStockPrice(symbol: holding.stock.symbol, market: holding.stock.market)
-                .map { price -> (UUID, Double) in
-                    (holding.id, price)
-                }
-                .catch { error -> AnyPublisher<(UUID, Double), Never> in
-                    print("⚠️ Failed to fetch \(holding.stock.symbol), keeping cached price")
-                    return Just((holding.id, holding.stock.currentPrice))
-                        .eraseToAnyPublisher()
-                }
-                .eraseToAnyPublisher()
-        }
-        
-        if publishers.isEmpty {
+        guard !holdings.isEmpty else {
             isLoading = false
             return
         }
         
-        Publishers.MergeMany(publishers)
-            .collect()
+        // Prepare batch request
+        let symbolsWithMarkets = holdings.map { (symbol: $0.stock.symbol, market: $0.stock.market.rawValue) }
+        
+        // Use batch endpoint for efficiency
+        backendAPIService.fetchMultipleStockPrices(symbols: symbolsWithMarkets)
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] results in
-                for (holdingId, price) in results {
-                    if let index = self?.holdings.firstIndex(where: { $0.id == holdingId }) {
-                        guard let self = self else { return }
-                        var updatedHolding = self.holdings[index]
-                        
-                        let updatedStock = Stock(
-                            id: updatedHolding.stock.id,
-                            symbol: updatedHolding.stock.symbol,
-                            name: updatedHolding.stock.name,
-                            market: updatedHolding.stock.market,
-                            currentPrice: price,
-                            currency: updatedHolding.stock.currency
-                        )
-                        
-                        updatedHolding = PortfolioHolding(
-                            id: updatedHolding.id,
-                            stock: updatedStock,
-                            quantity: updatedHolding.quantity,
-                            purchasePrice: updatedHolding.purchasePrice,
-                            purchaseDate: updatedHolding.purchaseDate,
-                            account: updatedHolding.account
-                        )
-                        
-                        self.holdings[index] = updatedHolding
-                        
-                        // Update in Core Data
-                        let fetchRequest: NSFetchRequest<HoldingEntity> = HoldingEntity.fetchRequest()
-                        fetchRequest.predicate = NSPredicate(format: "id == %@", holdingId as CVarArg)
-                        
-                        do {
-                            let results = try self.viewContext.fetch(fetchRequest)
-                            if let entity = results.first {
-                                entity.currentPrice = price
-                                try self.viewContext.save()
-                            }
-                        } catch {
-                            print("❌ Error updating Core Data: \(error)")
-                        }
-                        
-                        print("✅ Updated \(updatedHolding.stock.symbol): \(price)")
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    if case .failure(let error) = completion {
+                        print("❌ Batch price fetch failed: \(error)")
                     }
+                    self?.isLoading = false
+                },
+                receiveValue: { [weak self] prices in
+                    guard let self = self else { return }
+                    
+                    // Update holdings with new prices
+                    for price in prices {
+                        if let index = self.holdings.firstIndex(where: { $0.stock.symbol == price.symbol }) {
+                            var updatedHolding = self.holdings[index]
+                            
+                            let updatedStock = Stock(
+                                id: updatedHolding.stock.id,
+                                symbol: updatedHolding.stock.symbol,
+                                name: updatedHolding.stock.name,
+                                market: updatedHolding.stock.market,
+                                currentPrice: price.price,
+                                currency: price.currency
+                            )
+                            
+                            updatedHolding = PortfolioHolding(
+                                id: updatedHolding.id,
+                                stock: updatedStock,
+                                quantity: updatedHolding.quantity,
+                                purchasePrice: updatedHolding.purchasePrice,
+                                purchaseDate: updatedHolding.purchaseDate,
+                                account: updatedHolding.account
+                            )
+                            
+                            self.holdings[index] = updatedHolding
+                            
+                            // Update in Core Data
+                            self.updateCoreData(for: updatedHolding, newPrice: price.price)
+                            
+                            print("✅ Updated \(updatedHolding.stock.symbol): \(price.price) \(price.currency)")
+                        }
+                    }
+                    
+                    self.updatePortfolioSummary()
+                    self.recordPortfolioSnapshot()
+                    self.isLoading = false
                 }
-                
-                self?.updatePortfolioSummary()
-                self?.recordPortfolioSnapshot()
-                self?.isLoading = false
-            }
+            )
             .store(in: &cancellables)
+    }
+    
+    // MARK: - Update Core Data for Holding
+    private func updateCoreData(for holding: PortfolioHolding, newPrice: Double) {
+        let fetchRequest: NSFetchRequest<HoldingEntity> = HoldingEntity.fetchRequest()
+        fetchRequest.predicate = NSPredicate(format: "id == %@", holding.id as CVarArg)
+        
+        do {
+            let results = try viewContext.fetch(fetchRequest)
+            if let entity = results.first {
+                entity.currentPrice = newPrice
+                try viewContext.save()
+            }
+        } catch {
+            print("❌ Error updating Core Data: \(error)")
+        }
     }
     
     // MARK: - Fetch Exchange Rate (Using Vercel Backend)
@@ -247,7 +258,7 @@ class PortfolioViewModel: NSObject, ObservableObject {
             
             totalValueInJpy += holdingValueInJpy
             
-            // Cost basis (always in JPY)
+            // Cost basis (always in JPY for consistency)
             let costInJpy = holding.purchasePrice * holding.quantity
             totalCostBasis += costInJpy
         }
@@ -307,6 +318,50 @@ class PortfolioViewModel: NSObject, ObservableObject {
             print("❌ Error clearing holdings: \(error)")
         }
         
+        updatePortfolioSummary()
+    }
+    
+    // MARK: - Save Portfolio (Alias for saveContext)
+    func savePortfolio() {
+        do {
+            try viewContext.save()
+            print("💾 Portfolio saved to Core Data")
+        } catch {
+            print("❌ Error saving portfolio: \(error)")
+        }
+    }
+    
+    // MARK: - Auto-refresh Portfolio (Called periodically)
+    func startAutoRefresh(intervalSeconds: TimeInterval = 300) {
+        print("⏰ Starting auto-refresh every \(Int(intervalSeconds)) seconds")
+        
+        // Initial refresh
+        refreshPortfolio()
+        
+        // Schedule periodic refresh (every 5 minutes by default)
+        autoRefreshTimer = Timer.scheduledTimer(withTimeInterval: intervalSeconds, repeats: true) { [weak self] _ in
+            self?.refreshPortfolio()
+        }
+    }
+    
+    // MARK: - Stop Auto-refresh
+    func stopAutoRefresh() {
+        autoRefreshTimer?.invalidate()
+        autoRefreshTimer = nil
+        print("⏹️ Auto-refresh stopped")
+    }
+    
+    // MARK: - Full Sync (Prices + Exchange Rate)
+    func fullSync() {
+        print("🔄 Running full portfolio sync...")
+        fetchExchangeRate()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.updateStockPrices()
+        }
+    }
+    
+    // MARK: - Update Total Portfolio Value (Helper)
+    func updateTotalPortfolioValue() {
         updatePortfolioSummary()
     }
 }

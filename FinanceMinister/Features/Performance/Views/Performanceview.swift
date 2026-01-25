@@ -218,7 +218,7 @@ struct PerformanceView: View {
                                 .padding(.horizontal)
                             
                             ForEach(viewModel.holdings, id: \.id) { holding in
-                                HoldingRowView(holding: holding, exchangeRate: viewModel.exchangeRate)
+                                HoldingRowView(holding: holding, exchangeRate: viewModel.currentExchangeRate)
                             }
                         }
                         .padding(.horizontal)

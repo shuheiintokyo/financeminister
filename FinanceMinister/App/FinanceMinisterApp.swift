@@ -3,15 +3,16 @@ import CoreData
 
 @main
 struct FinanceMinisterApp: App {
+    @StateObject var viewModel = PortfolioViewModel()
+    
     var body: some Scene {
         WindowGroup {
-            TabView {
-                PortfolioTabView()
-                    .tabItem {
-                        Label("Portfolio", systemImage: "chart.pie")
-                    }
-            }
+            ContentView()
+                .environmentObject(viewModel)
+                .onAppear {
+                    // Start auto-refresh when app launches
+                    viewModel.startAutoRefresh(intervalSeconds: 300) // Every 5 minutes
+                }
         }
     }
 }
-

@@ -13,8 +13,6 @@ struct AddHoldingView: View {
     @State private var isSearching: Bool = false
     @State private var showClearButton: Bool = false
     
-//    private var cancellables = Combine.Set<AnyCancellable>()
-    
     var canAddHolding: Bool {
         selectedStock != nil && !quantity.isEmpty && Double(quantity) ?? 0 > 0
     }
@@ -136,7 +134,7 @@ struct AddHoldingView: View {
                 // Input Section
                 VStack(alignment: .leading, spacing: 16) {
                     // Quantity Input
-                    VStack(alignment: .leading, spacing: 8) {
+                    VStack(alignment: .leading) {
                         Text("数量")
                             .font(.subheadline)
                             .fontWeight(.semibold)
@@ -211,12 +209,17 @@ struct AddHoldingView: View {
         print("DEBUG: quantity = '\(quantity)'")
         print("DEBUG: canAddHolding = \(canAddHolding)")
         
-        // Add holding without purchase price
-        viewModel.addHolding(
+        // Create PortfolioHolding object
+        let holding = PortfolioHolding(
             stock: stock,
             quantity: qty,
-            purchasePrice: 0  // Not used anymore
+            purchasePrice: 0,
+            purchaseDate: Date(),
+            account: "Default"
         )
+        
+        // Add holding to view model
+        viewModel.addHolding(holding)
         
         print("✅ Holding added successfully")
         presentationMode.wrappedValue.dismiss()

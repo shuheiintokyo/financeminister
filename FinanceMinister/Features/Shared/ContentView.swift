@@ -1,7 +1,8 @@
 import SwiftUI
 
 struct ContentView: View {
-    @State private var selectedTab: Tab = .login
+    @EnvironmentObject var viewModel: PortfolioViewModel
+    @State private var selectedTab: Tab = .portfolio
     
     enum Tab {
         case portfolio
@@ -12,7 +13,7 @@ struct ContentView: View {
     
     var body: some View {
         TabView(selection: $selectedTab) {
-            // Portfolio & Register Combined Tab
+            // Portfolio Tab
             PortfolioManagementView()
                 .tabItem {
                     Label("ポートフォリオ", systemImage: "chart.pie.fill")
@@ -20,7 +21,7 @@ struct ContentView: View {
                 .tag(Tab.portfolio)
             
             // Performance Tab
-            PerformanceView()
+            PerformanceView(viewModel: viewModel)
                 .tabItem {
                     Label("パフォーマンス", systemImage: "chart.line")
                 }
